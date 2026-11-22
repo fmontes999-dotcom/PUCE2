@@ -128,36 +128,3 @@
     </footer>
 </body>
 </html>
-    <style>
-        body {
-            min-height: 100vh;
-            margin: 0;
-            display: grid;
-            place-items: center;
-            font-family: system-ui, sans-serif;
-            background: #eef2ff;
-            color: #1e1b4b;
-        }
-        main {
-            padding: 2rem 3rem;
-            border-radius: 1rem;
-            background: white;
-            box-shadow: 0 10px 30px rgb(30 27 75 / 12%);
-            text-align: center;
-        }
-        p { color: #64748b; }
-    </style>
-</head>
-<body>
-    <main>
-        <h1>Hola mundo</h1>
-        <p>
-            {% if supabase_configurado %}
-            Supabase configurado
-            {% else %}
-            Supabase pendiente de configurar
-            {% endif %}
-        </p>
-    </main>
-</body>
-</html>
