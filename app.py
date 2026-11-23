@@ -129,6 +129,25 @@ def login():
     return redirect(url_for("inicio"))
 
 
+SIGNUP_ERRORS = {
+    "over_email_send_rate_limit": "Supabase limitó los correos de confirmación (demasiados intentos). Espera un rato o desactiva 'Confirm email' en Supabase.",
+    "over_request_rate_limit": "Demasiados intentos seguidos. Espera unos minutos e inténtalo de nuevo.",
+    "email_address_invalid": "Supabase no acepta ese correo. Prueba con otro correo real.",
+    "weak_password": "La contraseña es demasiado débil. Usa letras, números y más de 8 caracteres.",
+    "signup_disabled": "El registro de cuentas está desactivado en Supabase.",
+    "user_already_exists": "Ese correo ya está registrado. Inicia sesión.",
+    "email_exists": "Ese correo ya está registrado. Inicia sesión.",
+}
+
+
+def describe_signup_error(error):
+    code = getattr(error, "code", None)
+    if code in SIGNUP_ERRORS:
+        return SIGNUP_ERRORS[code]
+    detail = getattr(error, "message", None) or str(error) or type(error).__name__
+    return f"No se pudo crear la cuenta: {detail}"
+
+
 @app.post("/registro")
 def register():
     email = request.form["email"].strip().lower()
@@ -153,7 +172,8 @@ def register():
                 flash("Cuenta creada. Revisa tu correo para confirmar la cuenta.")
                 return redirect(url_for("login_page"))
         except Exception as error:
-            flash("No se pudo crear la cuenta.")
+            app.logger.error("Supabase sign_up falló: %r", error)
+            flash(describe_signup_error(error))
             return redirect(url_for("register_page"))
 
     try:
