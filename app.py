@@ -229,7 +229,29 @@ def update_order(order_id, status):
 def inicio():
     if not session.get("user_id"):
         return redirect(url_for("login_page"))
-    return render_template("index.html", orders=get_orders())
+    orders = get_orders()
+    today_prefix = datetime.utcnow().date().isoformat()
+    today_orders = [
+        order for order in orders
+        if str(order.get("created_at", "")).startswith(today_prefix)
+    ]
+    sales = sum(float(order.get("total", 0) or 0) for order in today_orders)
+    active = sum(
+        1 for order in today_orders
+        if order.get("status") not in ("entregado", "cancelado")
+    )
+    metrics = {
+        "today": len(today_orders),
+        "active": active,
+        "sales": sales,
+        "connections": 3,
+    }
+    return render_template(
+        "index.html",
+        orders=orders,
+        metrics=metrics,
+        today=datetime.utcnow().strftime("%A, %d de %B"),
+    )
 
 
 @app.post("/pedidos")

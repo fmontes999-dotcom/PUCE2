@@ -3,179 +3,177 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Smart Order IA</title>
+    <title>Panel · Smart Order</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
     <script defer src="{{ url_for('static', filename='main.js') }}"></script>
 </head>
-<body>
-    <header class="topbar">
-        <a class="brand" href="#inicio" aria-label="Smart Order IA">
-            <span class="brand-mark">IA</span>
-            <span>Smart Order</span>
-        </a>
-        <nav aria-label="Navegacion principal">
-            <a href="#servicio">Servicio</a>
-            <a href="#nosotros">Nosotros</a>
-            <a href="#contacto">Contacto</a>
-        </nav>
-        <form action="{{ url_for('logout') }}" method="post">
-            <button class="nav-cta nav-logout" type="submit">Cerrar sesión</button>
-        </form>
-    </header>
-
-    <main id="inicio">
-        <section class="order-manager" aria-labelledby="pedidos-titulo">
-            <div class="section-heading">
-                <p class="eyebrow">Panel operativo</p>
-                <h2 id="pedidos-titulo">Pedidos en tiempo real</h2>
-            </div>
-            <form class="order-form" action="{{ url_for('crear_pedido') }}" method="post">
-                <label>
-                    Plataforma
-                    <select name="platform" required>
-                        <option value="Rappi">Rappi</option>
-                        <option value="PedidosYa">PedidosYa</option>
-                        <option value="Uber Eats">Uber Eats</option>
-                        <option value="Directo">Directo</option>
-                    </select>
-                </label>
-                <label>
-                    Cliente
-                    <input name="customer" maxlength="100" placeholder="Nombre del cliente" required>
-                </label>
-                <label>
-                    Total
-                    <input name="total" type="number" min="0" step="0.01" placeholder="0.00" required>
-                </label>
-                <button class="button button-primary" type="submit">Agregar pedido</button>
+<body class="dashboard-body">
+    <div class="app-shell">
+        <aside class="sidebar">
+            <a class="sidebar-brand" href="/" aria-label="Smart Order">
+                <span class="brand-gem">S</span>
+                <span>Smart Order</span>
+            </a>
+            <nav class="sidebar-nav" aria-label="Panel">
+                <a class="active" href="/">
+                    <span class="nav-icon">⌂</span>
+                    <span>Inicio</span>
+                </a>
+                <a href="#pedidos">
+                    <span class="nav-icon">▤</span>
+                    <span>Pedidos</span>
+                </a>
+                <a href="#conexiones">
+                    <span class="nav-icon">⌁</span>
+                    <span>Conexiones</span>
+                </a>
+                <a href="#reportes">
+                    <span class="nav-icon">◫</span>
+                    <span>Reportes</span>
+                </a>
+            </nav>
+            <form class="sidebar-user" action="{{ url_for('logout') }}" method="post">
+                <span class="avatar">{{ session.email[0:1]|upper if session.email else 'U' }}</span>
+                <span class="user-info">
+                    <strong>Mi cuenta</strong>
+                    <small>{{ session.email or 'Usuario' }}</small>
+                </span>
+                <button type="submit" title="Cerrar sesión">↗</button>
             </form>
-            <div class="orders-list">
-                {% for order in orders %}
-                <article class="order-row">
-                    <div>
-                        <strong>{{ order.customer }}</strong>
-                        <span>{{ order.platform }}</span>
+        </aside>
+
+        <main class="dashboard-main" id="inicio">
+            <header class="dashboard-topbar">
+                <button class="menu-button" type="button" aria-label="Abrir menú">☰</button>
+                <div class="breadcrumb">
+                    <span class="breadcrumb-icon">⌂</span>
+                    <strong>Panel</strong>
+                </div>
+                <div class="topbar-actions">
+                    <button type="button" class="icon-button" title="Notificaciones">♧</button>
+                    <button type="button" class="icon-button" title="Configuración">⚙</button>
+                </div>
+            </header>
+
+            <div class="dashboard-content">
+                <section class="welcome">
+                    <p>Panel de hoy</p>
+                    <h1>Smart Order</h1>
+                    <div class="welcome-meta">
+                        <span>{{ today }}</span>
+                        <span>·</span>
+                        <strong>{{ metrics.connections }}</strong>
+                        <span>canales de delivery recibiendo pedidos</span>
                     </div>
-                    <b>${{ "%.2f"|format(order.total) }}</b>
-                    <form action="{{ url_for('actualizar_estado', order_id=order.id) }}" method="post">
-                        <select name="status" aria-label="Estado del pedido">
-                            <option value="nuevo" {% if order.status == 'nuevo' %}selected{% endif %}>Nuevo</option>
-                            <option value="preparando" {% if order.status == 'preparando' %}selected{% endif %}>Preparando</option>
-                            <option value="listo" {% if order.status == 'listo' %}selected{% endif %}>Listo</option>
-                            <option value="entregado" {% if order.status == 'entregado' %}selected{% endif %}>Entregado</option>
-                        </select>
-                        <button type="submit">Actualizar</button>
+                    <div class="welcome-actions">
+                        <a class="button outline" href="#conexiones">
+                            <span class="button-icon">⌁</span>
+                            Conexiones
+                        </a>
+                        <a class="button orange" href="#pedidos">
+                            Ver pedidos
+                            <span>→</span>
+                        </a>
+                    </div>
+                </section>
+
+                <section class="metrics-grid" id="reportes">
+                    <article class="metric-card accent">
+                        <p>Pedidos hoy</p>
+                        <strong>{{ metrics.today }}</strong>
+                        <small>{{ metrics.active }} pedidos activos</small>
+                    </article>
+                    <article class="metric-card">
+                        <p>Ventas</p>
+                        <strong>${{ "%.2f"|format(metrics.sales) }}</strong>
+                        <small>Registradas hoy</small>
+                    </article>
+                    <article class="metric-card">
+                        <p>Plataformas</p>
+                        <strong>{{ metrics.connections }}</strong>
+                        <small>Rappi · PedidosYa · Uber Eats</small>
+                    </article>
+                </section>
+
+                <section class="orders-section" id="pedidos">
+                    <div class="section-head">
+                        <div>
+                            <p>Pedidos hoy</p>
+                            <h2>Actividad reciente</h2>
+                        </div>
+                        <button class="button outline compact" type="button" id="toggle-order-form">+ Nuevo pedido</button>
+                    </div>
+
+                    <form class="order-form hidden" action="{{ url_for('crear_pedido') }}" method="post" id="order-form">
+                        <label>
+                            Plataforma
+                            <select name="platform" required>
+                                <option value="Rappi">Rappi</option>
+                                <option value="PedidosYa">PedidosYa</option>
+                                <option value="Uber Eats">Uber Eats</option>
+                                <option value="Directo">Directo</option>
+                            </select>
+                        </label>
+                        <label>
+                            Cliente
+                            <input name="customer" maxlength="100" placeholder="Nombre del cliente" required>
+                        </label>
+                        <label>
+                            Total
+                            <input name="total" type="number" min="0" step="0.01" placeholder="0.00" required>
+                        </label>
+                        <button class="button orange" type="submit">Agregar pedido</button>
                     </form>
-                </article>
-                {% else %}
-                <p class="empty-orders">Aún no hay pedidos registrados.</p>
-                {% endfor %}
-            </div>
-        </section>
 
-        <section class="hero">
-            <div class="hero-copy">
-                <p class="eyebrow">Pedidos inteligentes para restaurantes</p>
-                <h1>Recibe más pedidos.<br><span>Sin complicaciones.</span></h1>
-                <p class="lead">Centraliza Rappi, PedidosYa y Uber Eats en una sola plataforma con inteligencia artificial.</p>
-                <div class="hero-actions">
-                    <a class="button button-primary" href="#contacto">Agenda una demostración</a>
-                    <a class="button button-secondary" href="#servicio">Conoce el servicio</a>
-                </div>
-                <div class="stats">
-                    <div><strong>+40%</strong><span>más eficiencia</span></div>
-                    <div><strong>24/7</strong><span>pedidos activos</span></div>
-                    <div><strong>1 panel</strong><span>toda tu operación</span></div>
-                </div>
-            </div>
-
-            <div class="hero-visual" aria-label="Vista de pedidos inteligentes">
-                <div class="orbit orbit-one"></div>
-                <div class="orbit orbit-two"></div>
-                <div class="phone">
-                    <div class="phone-speaker"></div>
-                    <div class="phone-header">
-                        <strong>Pedidos</strong>
-                        <span>● En línea</span>
+                    <div class="orders-list">
+                        {% for order in orders %}
+                        <article class="order-row">
+                            <span class="order-status {{ order.status }}"></span>
+                            <div class="order-client">
+                                <strong>{{ order.customer }}</strong>
+                                <small>{{ order.platform }}</small>
+                            </div>
+                            <div class="order-total">
+                                <small>Total</small>
+                                <strong>${{ "%.2f"|format(order.total) }}</strong>
+                            </div>
+                            <form action="{{ url_for('actualizar_estado', order_id=order.id) }}" method="post">
+                                <select name="status" aria-label="Estado del pedido">
+                                    <option value="nuevo" {% if order.status == 'nuevo' %}selected{% endif %}>Nuevo</option>
+                                    <option value="preparando" {% if order.status == 'preparando' %}selected{% endif %}>Preparando</option>
+                                    <option value="listo" {% if order.status == 'listo' %}selected{% endif %}>Listo</option>
+                                    <option value="entregado" {% if order.status == 'entregado' %}selected{% endif %}>Entregado</option>
+                                </select>
+                                <button type="submit">Actualizar</button>
+                            </form>
+                        </article>
+                        {% else %}
+                        <div class="empty-state">
+                            <span>0</span>
+                            <div>
+                                <strong>No hay pedidos registrados</strong>
+                                <small>Agrega un pedido para comenzar.</small>
+                            </div>
+                        </div>
+                        {% endfor %}
                     </div>
-                    <article class="order-card">
-                        <div class="order-top"><span class="app-tag rappi">Rappi</span><b>$41.69</b></div>
-                        <small>2 pedidos hoy</small>
-                    </article>
-                    <article class="order-card">
-                        <div class="order-top"><span class="app-tag pedidos">PedidosYa</span><b>$48.88</b></div>
-                        <small>1 pedido nuevo</small>
-                    </article>
-                    <article class="order-card">
-                        <div class="order-top"><span class="app-tag uber">Uber Eats</span><b>$22.43</b></div>
-                        <small>Listo para entregar</small>
-                    </article>
-                </div>
-                <div class="ai-badge">
-                    <span class="spark">✦</span>
-                    <div><strong>Orden IA</strong><small>Clasificando pedido</small></div>
-                </div>
-            </div>
-        </section>
+                </section>
 
-        <section class="platform" id="servicio">
-            <div class="section-heading">
-                <p class="eyebrow">Todo en un solo lugar</p>
-                <h2>Gestiona cada pedido en tiempo real</h2>
+                <section class="connections" id="conexiones">
+                    <div class="section-head">
+                        <div>
+                            <p>Integraciones</p>
+                            <h2>Conexiones</h2>
+                        </div>
+                    </div>
+                    <div class="connection-grid">
+                        <article><span class="channel rappi">R</span><div><strong>Rappi</strong><small>Configuración pendiente</small></div></article>
+                        <article><span class="channel pedidos">P</span><div><strong>PedidosYa</strong><small>Configuración pendiente</small></div></article>
+                        <article><span class="channel uber">U</span><div><strong>Uber Eats</strong><small>Configuración pendiente</small></div></article>
+                    </div>
+                </section>
             </div>
-            <div class="feature-grid">
-                <article class="feature-card feature-main">
-                    <div class="feature-icon">⌁</div>
-                    <h3>Visualización centralizada</h3>
-                    <p>Consulta las plataformas de delivery desde una sola pantalla.</p>
-                </article>
-                <article class="feature-card">
-                    <div class="feature-icon">IA</div>
-                    <h3>Organización inteligente</h3>
-                    <p>La inteligencia artificial clasifica productos y automatiza prioridades.</p>
-                </article>
-                <article class="feature-card">
-                    <div class="feature-icon">!</div>
-                    <h3>Alertas automáticas</h3>
-                    <p>Detecta retrasos y ayuda a evitar cancelaciones.</p>
-                </article>
-                <article class="feature-card">
-                    <div class="feature-icon">?</div>
-                    <h3>Soporte y capacitación</h3>
-                    <p>Acompañamiento técnico para tu equipo y local.</p>
-                </article>
-            </div>
-        </section>
-
-        <section class="about" id="nosotros">
-            <div class="about-card mission">
-                <p class="eyebrow">Nuestra misión</p>
-                <h2>Simplificar la operación gastronómica</h2>
-                <p>Conectamos tecnología, servicio y datos para que tu equipo pueda atender mejor a cada cliente.</p>
-            </div>
-            <div class="about-card swot">
-                <p class="eyebrow">Matriz FODA</p>
-                <div class="swot-columns">
-                    <div><strong>Fortalezas</strong><ul><li>Pedidos centralizados</li><li>Automatización con IA</li></ul></div>
-                    <div><strong>Oportunidades</strong><ul><li>Crecimiento digital</li><li>Transformación de negocios</li></ul></div>
-                    <div><strong>Debilidades</strong><ul><li>Costos iniciales</li><li>Dependencia tecnológica</li></ul></div>
-                    <div><strong>Amenazas</strong><ul><li>Ciberseguridad</li><li>Cambios en plataformas</li></ul></div>
-                </div>
-            </div>
-        </section>
-
-        <section class="contact" id="contacto">
-            <div>
-                <p class="eyebrow">Comencemos</p>
-                <h2>¿Listo para optimizar tus pedidos?</h2>
-            </div>
-            <a class="button button-light" href="mailto:smartorderia@gmail.com">Contactar ahora</a>
-        </section>
-    </main>
-
-    <footer>
-        <span>Smart Order IA</span>
-        <span>© 2026</span>
-    </footer>
+        </main>
+    </div>
 </body>
 </html>
