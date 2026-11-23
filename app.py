@@ -61,6 +61,25 @@ def ensure_sqlite():
         }
         if "user_id" not in columns:
             connection.execute("ALTER TABLE orders ADD COLUMN user_id TEXT")
+        connection.execute(
+            """CREATE TABLE IF NOT EXISTS restaurants (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                address TEXT,
+                created_at TEXT NOT NULL
+            )"""
+        )
+        connection.execute(
+            """CREATE TABLE IF NOT EXISTS alerts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL,
+                title TEXT NOT NULL,
+                message TEXT NOT NULL,
+                read INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL
+            )"""
+        )
         connection.commit()
 
 
@@ -246,11 +265,26 @@ def inicio():
         "sales": sales,
         "connections": 3,
     }
+    with get_db() as connection:
+        restaurants = [
+            dict(row) for row in connection.execute(
+                "SELECT id, name, address FROM restaurants WHERE user_id = ? ORDER BY id DESC",
+                (session["user_id"],),
+            ).fetchall()
+        ]
+        alerts = [
+            dict(row) for row in connection.execute(
+                "SELECT id, title, message, read, created_at FROM alerts WHERE user_id = ? ORDER BY id DESC",
+                (session["user_id"],),
+            ).fetchall()
+        ]
     return render_template(
         "index.html",
         orders=orders,
         metrics=metrics,
         today=datetime.utcnow().strftime("%A, %d de %B"),
+        restaurants=restaurants,
+        alerts=alerts,
     )
 
 
@@ -273,6 +307,62 @@ def actualizar_estado(order_id):
 @app.get("/health")
 def estado():
     return {"estado": "ok"}
+
+
+@app.post("/demo/sincronizar")
+def sincronizar_demo():
+    if not session.get("user_id"):
+        return redirect(url_for("login_page"))
+
+    demo_orders = [
+        ("Rappi", "Pedido Rappi", 41.69),
+        ("PedidosYa", "Pedido PedidosYa", 48.88),
+        ("Uber Eats", "Pedido Uber Eats", 22.43),
+    ]
+    for platform, customer, total in demo_orders:
+        add_order(platform, customer, total)
+
+    with get_db() as connection:
+        connection.execute(
+            "INSERT INTO alerts (user_id, title, message, created_at) VALUES (?, ?, ?, ?)",
+            (
+                session["user_id"],
+                "Sincronización de prueba",
+                "Se agregaron pedidos demostrativos de las tres plataformas.",
+                datetime.utcnow().isoformat(),
+            ),
+        )
+        connection.commit()
+    return redirect(url_for("inicio"))
+
+
+@app.post("/restaurantes")
+def crear_restaurante():
+    if not session.get("user_id"):
+        return redirect(url_for("login_page"))
+    name = request.form["name"].strip()
+    address = request.form.get("address", "").strip()
+    if name:
+        with get_db() as connection:
+            connection.execute(
+                "INSERT INTO restaurants (user_id, name, address, created_at) VALUES (?, ?, ?, ?)",
+                (session["user_id"], name, address, datetime.utcnow().isoformat()),
+            )
+            connection.commit()
+    return redirect(url_for("inicio"))
+
+
+@app.post("/alertas/<int:alert_id>/leer")
+def leer_alerta(alert_id):
+    if not session.get("user_id"):
+        return redirect(url_for("login_page"))
+    with get_db() as connection:
+        connection.execute(
+            "UPDATE alerts SET read = 1 WHERE id = ? AND user_id = ?",
+            (alert_id, session["user_id"]),
+        )
+        connection.commit()
+    return redirect(url_for("inicio"))
 
 
 if __name__ == "__main__":

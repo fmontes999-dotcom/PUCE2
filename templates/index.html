@@ -171,6 +171,55 @@
                         <article><span class="channel pedidos">P</span><div><strong>PedidosYa</strong><small>Configuración pendiente</small></div></article>
                         <article><span class="channel uber">U</span><div><strong>Uber Eats</strong><small>Configuración pendiente</small></div></article>
                     </div>
+                    <form action="{{ url_for('sincronizar_demo') }}" method="post" class="demo-sync">
+                        <button class="button outline" type="submit">Sincronizar demostración</button>
+                    </form>
+                </section>
+
+                <section class="operations-grid">
+                    <article class="operations-card" id="restaurantes">
+                        <div class="section-head">
+                            <div>
+                                <p>Ubicaciones</p>
+                                <h2>Restaurantes</h2>
+                            </div>
+                        </div>
+                        <form class="restaurant-form" action="{{ url_for('crear_restaurante') }}" method="post">
+                            <input name="name" placeholder="Nombre del restaurante" required>
+                            <input name="address" placeholder="Dirección">
+                            <button class="button orange" type="submit">Agregar</button>
+                        </form>
+                        {% for restaurant in restaurants %}
+                        <div class="restaurant-row">
+                            <strong>{{ restaurant.name }}</strong>
+                            <small>{{ restaurant.address or 'Sin dirección' }}</small>
+                        </div>
+                        {% else %}
+                        <div class="restaurant-row"><small>No hay restaurantes registrados.</small></div>
+                        {% endfor %}
+                    </article>
+
+                    <article class="operations-card" id="notificaciones">
+                        <div class="section-head">
+                            <div>
+                                <p>Actividad</p>
+                                <h2>Notificaciones</h2>
+                            </div>
+                        </div>
+                        {% for alert in alerts %}
+                        <form class="alert-row" action="{{ url_for('leer_alerta', alert_id=alert.id) }}" method="post">
+                            <div>
+                                <strong>{{ alert.title }}</strong>
+                                <small>{{ alert.message }}</small>
+                            </div>
+                            {% if not alert.read %}
+                            <button type="submit">Marcar</button>
+                            {% endif %}
+                        </form>
+                        {% else %}
+                        <div class="alert-row"><small>No tienes notificaciones nuevas.</small></div>
+                        {% endfor %}
+                    </article>
                 </section>
             </div>
         </main>

@@ -407,6 +407,55 @@ button, input, select { font: inherit; }
 .channel.rappi { background: #dc5039; }
 .channel.pedidos { background: #d75a42; }
 .channel.uber { background: #252a36; }
+.demo-sync { margin-top: 12px; }
+.operations-grid {
+    max-width: 1080px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-top: 34px;
+}
+.operations-card {
+    border: 1px solid #e2dfd5;
+    border-radius: 12px;
+    background: white;
+    padding: 18px;
+}
+.restaurant-form {
+    display: grid;
+    grid-template-columns: 1fr 1fr auto;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+.restaurant-form input {
+    min-height: 44px;
+    border: 1px solid #ddd9cf;
+    border-radius: 8px;
+    padding: 8px 10px;
+}
+.restaurant-row,
+.alert-row {
+    min-height: 62px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    border-top: 1px solid #ebe8df;
+    padding: 10px 0;
+}
+.restaurant-row { flex-direction: column; align-items: flex-start; justify-content: center; }
+.restaurant-row small,
+.alert-row small { color: #96999e; font-family: Arial, sans-serif; }
+.alert-row div { display: grid; }
+.alert-row button {
+    border: 0;
+    border-radius: 8px;
+    background: #20263a;
+    color: white;
+    padding: 8px 10px;
+    font-family: Arial, sans-serif;
+    cursor: pointer;
+}
 
 .auth-body {
     min-height: 100vh;
@@ -445,6 +494,7 @@ button, input, select { font: inherit; }
     .order-form { grid-template-columns: 1fr 1fr; }
     .order-row { grid-template-columns: 8px 1fr .7fr; }
     .order-row form { grid-column: 2 / -1; }
+    .operations-grid { grid-template-columns: 1fr; }
 }
 @media (max-width: 600px) {
     .sidebar { display: none; }
@@ -460,4 +510,6 @@ button, input, select { font: inherit; }
     .order-row { grid-template-columns: 8px 1fr; }
     .order-row .order-total { grid-column: 2; }
     .order-row form { grid-column: 2; flex-direction: column; }
+    .operations-grid { grid-template-columns: 1fr; }
+    .restaurant-form { grid-template-columns: 1fr; }
 }
