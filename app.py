@@ -1,12 +1,14 @@
 import os
 import sqlite3
 from datetime import datetime
+from werkzeug.security import check_password_hash, generate_password_hash
 
-from flask import Flask, redirect, render_template, request, url_for
+from flask import Flask, flash, redirect, render_template, request, session, url_for
 from supabase import Client, create_client
 
 
 app = Flask(__name__)
+app.secret_key = os.getenv("SESSION_SECRET", "desarrollo-local-cambiar")
 
 supabase: Client | None = None
 supabase_url = os.getenv("SUPABASE_URL")
@@ -24,25 +26,100 @@ def get_db():
 def ensure_sqlite():
     with get_db() as connection:
         connection.execute(
+            """CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                email TEXT NOT NULL UNIQUE,
+                password_hash TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )"""
+        )
+        connection.execute(
             """CREATE TABLE IF NOT EXISTS orders (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 platform TEXT NOT NULL,
                 customer TEXT NOT NULL,
                 total REAL NOT NULL DEFAULT 0,
                 status TEXT NOT NULL DEFAULT 'nuevo',
-                created_at TEXT NOT NULL
+                created_at TEXT NOT NULL,
+                user_id TEXT
             )"""
         )
+        columns = {
+            row["name"]
+            for row in connection.execute("PRAGMA table_info(orders)").fetchall()
+        }
+        if "user_id" not in columns:
+            connection.execute("ALTER TABLE orders ADD COLUMN user_id TEXT")
         connection.commit()
 
 
 ensure_sqlite()
 
 
+@app.get("/login")
+def login_page():
+    return render_template("auth.html", mode="login")
+
+
+@app.get("/registro")
+def register_page():
+    return render_template("auth.html", mode="register")
+
+
+@app.post("/login")
+def login():
+    email = request.form["email"].strip().lower()
+    password = request.form["password"]
+    with get_db() as connection:
+        user = connection.execute(
+            "SELECT id, email, password_hash FROM users WHERE email = ?",
+            (email,),
+        ).fetchone()
+    if not user or not check_password_hash(user["password_hash"], password):
+        flash("Correo o contraseña incorrectos.")
+        return redirect(url_for("login_page"))
+    session["user_id"] = str(user["id"])
+    session["email"] = user["email"]
+    return redirect(url_for("inicio"))
+
+
+@app.post("/registro")
+def register():
+    email = request.form["email"].strip().lower()
+    password = request.form["password"]
+    if len(password) < 8:
+        flash("La contraseña debe tener al menos 8 caracteres.")
+        return redirect(url_for("register_page"))
+    try:
+        with get_db() as connection:
+            cursor = connection.execute(
+                "INSERT INTO users (email, password_hash, created_at) VALUES (?, ?, ?)",
+                (email, generate_password_hash(password), datetime.utcnow().isoformat()),
+            )
+            user_id = cursor.lastrowid
+            connection.commit()
+    except sqlite3.IntegrityError:
+        flash("Ese correo ya está registrado.")
+        return redirect(url_for("register_page"))
+    session["user_id"] = str(user_id)
+    session["email"] = email
+    return redirect(url_for("inicio"))
+
+
+@app.post("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for("login_page"))
+
+
 def get_orders():
+    user_id = session.get("user_id")
+    if not user_id:
+        return []
+
     if supabase:
         try:
-            response = supabase.table("orders").select("*").order("created_at", desc=True).execute()
+            response = supabase.table("orders").select("*").eq("user_id", user_id).order("created_at", desc=True).execute()
             return response.data
         except Exception:
             pass
@@ -55,6 +132,10 @@ def get_orders():
 
 
 def add_order(platform, customer, total):
+    user_id = session.get("user_id")
+    if not user_id:
+        return
+
     if supabase:
         try:
             supabase.table("orders").insert({
@@ -62,6 +143,7 @@ def add_order(platform, customer, total):
                 "customer": customer,
                 "total": float(total),
                 "status": "nuevo",
+                "user_id": user_id,
             }).execute()
             return
         except Exception:
@@ -69,8 +151,8 @@ def add_order(platform, customer, total):
 
     with get_db() as connection:
         connection.execute(
-            "INSERT INTO orders (platform, customer, total, status, created_at) VALUES (?, ?, ?, 'nuevo', ?)",
-            (platform, customer, float(total), datetime.utcnow().isoformat()),
+            "INSERT INTO orders (platform, customer, total, status, created_at, user_id) VALUES (?, ?, ?, 'nuevo', ?, ?)",
+            (platform, customer, float(total), datetime.utcnow().isoformat(), user_id),
         )
         connection.commit()
 
@@ -95,6 +177,8 @@ def update_order(order_id, status):
 
 @app.get("/")
 def inicio():
+    if not session.get("user_id"):
+        return redirect(url_for("login_page"))
     return render_template("index.html", orders=get_orders())
 
 

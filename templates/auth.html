@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ "Crear cuenta" if mode == "register" else "Iniciar sesión" }} · Smart Order IA</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body class="auth-body">
+    <main class="auth-card">
+        <a class="brand auth-brand" href="{{ url_for('inicio') }}">
+            <span class="brand-mark">IA</span>
+            <span>Smart Order</span>
+        </a>
+        <p class="eyebrow">{{ "Nueva cuenta" if mode == "register" else "Acceso seguro" }}</p>
+        <h1>{{ "Crea tu cuenta" if mode == "register" else "Inicia sesión" }}</h1>
+        {% with messages = get_flashed_messages() %}
+            {% if messages %}
+                <div class="auth-message">{{ messages[0] }}</div>
+            {% endif %}
+        {% endwith %}
+        <form class="auth-form" action="{{ url_for('register') if mode == 'register' else url_for('login') }}" method="post">
+            <label>
+                Correo electrónico
+                <input type="email" name="email" autocomplete="email" required>
+            </label>
+            <label>
+                Contraseña
+                <input type="password" name="password" autocomplete="{{ 'new-password' if mode == 'register' else 'current-password' }}" minlength="8" required>
+            </label>
+            <button class="button button-primary" type="submit">
+                {{ "Crear cuenta" if mode == "register" else "Entrar" }}
+            </button>
+        </form>
+        {% if mode == "register" %}
+            <p class="auth-switch">¿Ya tienes cuenta? <a href="{{ url_for('login_page') }}">Inicia sesión</a></p>
+        {% else %}
+            <p class="auth-switch">¿No tienes cuenta? <a href="{{ url_for('register_page') }}">Crear cuenta</a></p>
+        {% endif %}
+    </main>
+</body>
+</html>

@@ -18,7 +18,9 @@
             <a href="#nosotros">Nosotros</a>
             <a href="#contacto">Contacto</a>
         </nav>
-        <a class="nav-cta" href="#contacto">Solicitar demo</a>
+        <form action="{{ url_for('logout') }}" method="post">
+            <button class="nav-cta nav-logout" type="submit">Cerrar sesión</button>
+        </form>
     </header>
 
     <main id="inicio">
