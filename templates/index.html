@@ -194,6 +194,11 @@
                         </article>
                         {% endfor %}
                     </div>
+                    {% if connected %}
+                    <form action="{{ url_for('hora_pico_demo') }}" method="post" class="demo-sync">
+                        <button class="button outline" type="submit">Simular hora pico (6 pedidos de Quito)</button>
+                    </form>
+                    {% endif %}
                 </section>
 
                 <section class="operations-grid">
@@ -208,6 +213,9 @@
                             <input name="name" placeholder="Nombre del restaurante" required>
                             <input name="address" placeholder="Dirección">
                             <button class="button orange" type="submit">Agregar</button>
+                        </form>
+                        <form action="{{ url_for('cargar_quito_demo') }}" method="post" class="demo-sync">
+                            <button class="button outline compact" type="submit">Cargar restaurantes de Quito (demo)</button>
                         </form>
                         {% for restaurant in restaurants %}
                         <div class="restaurant-row">

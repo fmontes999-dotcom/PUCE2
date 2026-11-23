@@ -418,6 +418,7 @@ button, input, select { font: inherit; }
     font-size: 12px;
     line-height: 1.5;
 }
+.demo-sync { margin: 12px 0; }
 .connection-card { flex-wrap: wrap; }
 .connection-card > div:nth-child(2) { flex: 1; min-width: 100px; }
 .connection-actions { display: flex; gap: 6px; width: 100%; }

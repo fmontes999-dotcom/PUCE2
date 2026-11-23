@@ -455,22 +455,41 @@ def estado():
 # APIs de partners y ajustar estos normalizadores al formato real.
 # ---------------------------------------------------------------------------
 
+def _label(code, name, items):
+    text = f'#{code} · {name or "Cliente"}'
+    if items:
+        text += " — " + ", ".join(f"{qty}× {dish}" for dish, qty in items)
+    return text
+
+
 def _parse_uber_eats(payload):
     eater = payload.get("eater", {})
     name = f'{eater.get("first_name", "")} {eater.get("last_name", "")}'.strip()
     cents = payload["payment"]["charges"]["total"]["amount"]
-    return f'#{payload.get("display_id", payload.get("id", "?"))} · {name or "Cliente"}', cents / 100
+    items = [(i["title"], i["quantity"]) for i in payload.get("cart", {}).get("items", [])]
+    code = payload.get("display_id", payload.get("id", "?"))
+    return _label(code, name, items), cents / 100, payload.get("store", {}).get("name")
 
 
 def _parse_rappi(payload):
     customer = payload.get("customer", {})
     name = f'{customer.get("first_name", "")} {customer.get("last_name", "")}'.strip()
-    return f'#{payload.get("order_id", "?")} · {name or "Cliente"}', payload["totals"]["total_order"]
+    items = [(i["name"], i["units"]) for i in payload.get("order_detail", {}).get("items", [])]
+    return (
+        _label(payload.get("order_id", "?"), name, items),
+        payload["totals"]["total_order"],
+        payload.get("store", {}).get("name"),
+    )
 
 
 def _parse_pedidosya(payload):
     name = payload.get("user", {}).get("name", "Cliente")
-    return f'#{payload.get("code", "?")} · {name}', payload["payment"]["amount"]
+    items = [(i["product"], i["quantity"]) for i in payload.get("details", [])]
+    return (
+        _label(payload.get("code", "?"), name, items),
+        payload["payment"]["amount"],
+        payload.get("restaurant", {}).get("name"),
+    )
 
 
 PLATFORMS = {
@@ -480,27 +499,71 @@ PLATFORMS = {
 }
 
 
+# Catálogo demo de Quito: barrios y calles reales, nombres de negocio ficticios.
+QUITO_DEMO = [
+    {"name": "Sabor Quiteño", "address": "Reina Victoria y Foch, La Mariscal", "menu": [
+        ("Encebollado", 3.50), ("Locro de papas", 3.50), ("Seco de pollo", 4.50),
+        ("Colada morada", 1.50), ("Empanadas de viento", 1.50)]},
+    {"name": "Hornado del Centro", "address": "García Moreno y Sucre, Centro Histórico", "menu": [
+        ("Hornado con mote", 6.00), ("Fritada", 6.50), ("Llapingachos", 4.50),
+        ("Tortillas con caucara", 4.00)]},
+    {"name": "Cevichería La Carolina", "address": "Av. Amazonas y Naciones Unidas, La Carolina", "menu": [
+        ("Ceviche de camarón", 7.00), ("Ceviche mixto", 8.00), ("Arroz marinero", 9.00),
+        ("Encebollado mixto", 5.50)]},
+    {"name": "Parrilla Cumbayá", "address": "Av. Interoceánica y Pampite, Cumbayá", "menu": [
+        ("Parrillada para 2", 22.00), ("Churrasco", 9.50), ("Chorizo con papas", 5.50),
+        ("Choclo con queso", 3.00)]},
+    {"name": "Cocina de la Abuela", "address": "Av. Eloy Alfaro y de los Pinos, El Batán", "menu": [
+        ("Bolón de verde", 2.50), ("Caldo de bolas", 4.50), ("Humitas", 2.00),
+        ("Café pasado", 1.25), ("Yaguarlocro", 4.00)]},
+    {"name": "Pizzería González Suárez", "address": "Av. González Suárez y 12 de Octubre, Quito", "menu": [
+        ("Pizza margarita", 9.00), ("Pizza pepperoni", 11.00), ("Lasaña", 8.50),
+        ("Pan de ajo", 3.50)]},
+]
+QUITO_CUSTOMERS = [
+    ("Andrés", "Játiva"), ("María Fernanda", "Cevallos"), ("Santiago", "Proaño"),
+    ("Daniela", "Chiriboga"), ("Esteban", "Villacís"), ("Paola", "Andrade"),
+    ("Juan Carlos", "Narváez"), ("Gabriela", "Endara"), ("Mateo", "Guamán"),
+    ("Valeria", "Tipán"),
+]
+DELIVERY_FEE = 1.50
+
+
+def pick_demo_order():
+    mine = {r["name"] for r in get_restaurants()}
+    pool = [r for r in QUITO_DEMO if r["name"] in mine] or QUITO_DEMO
+    restaurant = random.choice(pool)
+    dishes = random.sample(restaurant["menu"], k=random.randint(1, min(3, len(restaurant["menu"]))))
+    lines = [(dish, price, random.randint(1, 2)) for dish, price in dishes]
+    total = round(sum(price * qty for _, price, qty in lines) + DELIVERY_FEE, 2)
+    return restaurant["name"], lines, total
+
+
 def sample_payload(platform):
     code = f"{random.randint(1000, 9999)}"
-    name_first, name_last = random.choice(
-        [("Ana", "Torres"), ("Luis", "Mora"), ("Carla", "Vega"), ("Diego", "Salas")]
-    )
-    total = round(random.uniform(8, 60), 2)
+    first, last = random.choice(QUITO_CUSTOMERS)
+    restaurant, lines, total = pick_demo_order()
     if platform == "ubereats":
         return {
             "id": f"uber-{code}", "display_id": code,
-            "eater": {"first_name": name_first, "last_name": name_last},
-            "payment": {"charges": {"total": {"amount": int(total * 100), "currency_code": "USD"}}},
+            "store": {"name": restaurant},
+            "eater": {"first_name": first, "last_name": last},
+            "cart": {"items": [{"title": d, "quantity": q} for d, _, q in lines]},
+            "payment": {"charges": {"total": {"amount": round(total * 100), "currency_code": "USD"}}},
         }
     if platform == "rappi":
         return {
             "order_id": code,
-            "customer": {"first_name": name_first, "last_name": name_last},
+            "store": {"name": restaurant},
+            "customer": {"first_name": first, "last_name": last},
+            "order_detail": {"items": [{"name": d, "units": q} for d, _, q in lines]},
             "totals": {"total_order": total},
         }
     return {
         "code": code,
-        "user": {"name": f"{name_first} {name_last}"},
+        "restaurant": {"name": restaurant},
+        "user": {"name": f"{first} {last}"},
+        "details": [{"product": d, "quantity": q} for d, _, q in lines],
         "payment": {"amount": total},
     }
 
@@ -553,8 +616,9 @@ def set_connection(platform, connected):
 def ingest_order(platform, payload):
     """Convierte un pedido de una plataforma a nuestro formato y lo guarda."""
     info = PLATFORMS[platform]
-    customer, total = info["parse"](payload)
-    add_order(info["label"], customer, total)
+    customer, total, restaurant = info["parse"](payload)
+    source = f'{info["label"]} · {restaurant}' if restaurant else info["label"]
+    add_order(source, customer, total)
     add_alert(f'Nuevo pedido de {info["label"]}', f"{customer} · ${float(total):.2f}")
 
 
@@ -574,6 +638,32 @@ def pedido_entrante_demo(platform):
     if platform in PLATFORMS and platform in get_connections():
         ingest_order(platform, sample_payload(platform))
     return redirect(url_for("inicio") + "#pedidos")
+
+
+@app.post("/demo/hora-pico")
+def hora_pico_demo():
+    if not session.get("user_id"):
+        return redirect(url_for("login_page"))
+    connected = sorted(get_connections())
+    for _ in range(6 if connected else 0):
+        platform = random.choice(connected)
+        ingest_order(platform, sample_payload(platform))
+    return redirect(url_for("inicio") + "#pedidos")
+
+
+@app.post("/demo/quito")
+def cargar_quito_demo():
+    if not session.get("user_id"):
+        return redirect(url_for("login_page"))
+    existing = {r["name"] for r in get_restaurants()}
+    added = 0
+    for restaurant in QUITO_DEMO:
+        if restaurant["name"] not in existing:
+            add_restaurant(restaurant["name"], restaurant["address"])
+            added += 1
+    if added:
+        add_alert("Restaurantes de Quito cargados", f"Se agregaron {added} restaurantes de demostración.")
+    return redirect(url_for("inicio") + "#restaurantes")
 
 
 @app.post("/webhooks/<platform>")
