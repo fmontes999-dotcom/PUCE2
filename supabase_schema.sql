@@ -23,3 +23,38 @@ drop policy if exists "Users can delete their own orders" on public.orders;
 create policy "Users can delete their own orders"
     on public.orders for delete
     using (auth.uid() = user_id);
+
+-- Restaurantes por usuario
+create table if not exists public.restaurants (
+    id bigint generated always as identity primary key,
+    user_id uuid not null references auth.users(id) on delete cascade,
+    name text not null,
+    address text,
+    created_at timestamptz not null default now()
+);
+
+alter table public.restaurants enable row level security;
+
+drop policy if exists "Users manage their own restaurants" on public.restaurants;
+create policy "Users manage their own restaurants"
+    on public.restaurants for all
+    using (auth.uid() = user_id)
+    with check (auth.uid() = user_id);
+
+-- Alertas / notificaciones por usuario
+create table if not exists public.alerts (
+    id bigint generated always as identity primary key,
+    user_id uuid not null references auth.users(id) on delete cascade,
+    title text not null,
+    message text not null,
+    read boolean not null default false,
+    created_at timestamptz not null default now()
+);
+
+alter table public.alerts enable row level security;
+
+drop policy if exists "Users manage their own alerts" on public.alerts;
+create policy "Users manage their own alerts"
+    on public.alerts for all
+    using (auth.uid() = user_id)
+    with check (auth.uid() = user_id);

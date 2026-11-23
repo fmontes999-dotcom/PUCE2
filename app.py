@@ -161,6 +161,9 @@ def register():
             auth = supabase.auth.sign_up({
                 "email": email,
                 "password": password,
+                "options": {
+                    "email_redirect_to": url_for("correo_confirmado", _external=True)
+                },
             })
             if auth.user:
                 if auth.session:
@@ -192,6 +195,12 @@ def register():
     return redirect(url_for("inicio"))
 
 
+@app.get("/confirmado")
+def correo_confirmado():
+    flash("Correo confirmado. Ya puedes iniciar sesión.")
+    return redirect(url_for("login_page"))
+
+
 @app.post("/logout")
 def logout():
     session.clear()
@@ -213,7 +222,8 @@ def get_orders():
 
     with get_db() as connection:
         rows = connection.execute(
-            "SELECT id, platform, customer, total, status, created_at FROM orders ORDER BY id DESC"
+            "SELECT id, platform, customer, total, status, created_at FROM orders WHERE user_id = ? ORDER BY id DESC",
+            (user_id,),
         ).fetchall()
         return [dict(row) for row in rows]
 
@@ -256,10 +266,118 @@ def update_order(order_id, status):
         except Exception:
             pass
 
+    user_id = session.get("user_id")
+    if not user_id:
+        return
     with get_db() as connection:
         connection.execute(
-            "UPDATE orders SET status = ? WHERE id = ?",
-            (status, order_id),
+            "UPDATE orders SET status = ? WHERE id = ? AND user_id = ?",
+            (status, order_id, user_id),
+        )
+        connection.commit()
+
+
+def get_restaurants():
+    user_id = session["user_id"]
+    client = get_supabase_for_session()
+    if client:
+        try:
+            response = (
+                client.table("restaurants")
+                .select("id, name, address")
+                .order("id", desc=True)
+                .execute()
+            )
+            return response.data
+        except Exception:
+            pass
+    with get_db() as connection:
+        return [
+            dict(row) for row in connection.execute(
+                "SELECT id, name, address FROM restaurants WHERE user_id = ? ORDER BY id DESC",
+                (user_id,),
+            ).fetchall()
+        ]
+
+
+def add_restaurant(name, address):
+    user_id = session["user_id"]
+    client = get_supabase_for_session()
+    if client:
+        try:
+            client.table("restaurants").insert({
+                "user_id": user_id,
+                "name": name,
+                "address": address,
+            }).execute()
+            return
+        except Exception:
+            pass
+    with get_db() as connection:
+        connection.execute(
+            "INSERT INTO restaurants (user_id, name, address, created_at) VALUES (?, ?, ?, ?)",
+            (user_id, name, address, datetime.utcnow().isoformat()),
+        )
+        connection.commit()
+
+
+def get_alerts():
+    user_id = session["user_id"]
+    client = get_supabase_for_session()
+    if client:
+        try:
+            response = (
+                client.table("alerts")
+                .select("id, title, message, read, created_at")
+                .order("id", desc=True)
+                .execute()
+            )
+            return response.data
+        except Exception:
+            pass
+    with get_db() as connection:
+        return [
+            dict(row) for row in connection.execute(
+                "SELECT id, title, message, read, created_at FROM alerts WHERE user_id = ? ORDER BY id DESC",
+                (user_id,),
+            ).fetchall()
+        ]
+
+
+def add_alert(title, message):
+    user_id = session["user_id"]
+    client = get_supabase_for_session()
+    if client:
+        try:
+            client.table("alerts").insert({
+                "user_id": user_id,
+                "title": title,
+                "message": message,
+            }).execute()
+            return
+        except Exception:
+            pass
+    with get_db() as connection:
+        connection.execute(
+            "INSERT INTO alerts (user_id, title, message, created_at) VALUES (?, ?, ?, ?)",
+            (user_id, title, message, datetime.utcnow().isoformat()),
+        )
+        connection.commit()
+
+
+def mark_alert_read(alert_id):
+    user_id = session["user_id"]
+    client = get_supabase_for_session()
+    if client:
+        try:
+            client.table("alerts").update({"read": True}).eq("id", alert_id).execute()
+            return
+        except Exception:
+            pass
+    with get_db() as connection:
+        connection.execute(
+            "UPDATE alerts SET read = 1 WHERE id = ? AND user_id = ?",
+            (alert_id, user_id),
         )
         connection.commit()
 
@@ -285,19 +403,8 @@ def inicio():
         "sales": sales,
         "connections": 3,
     }
-    with get_db() as connection:
-        restaurants = [
-            dict(row) for row in connection.execute(
-                "SELECT id, name, address FROM restaurants WHERE user_id = ? ORDER BY id DESC",
-                (session["user_id"],),
-            ).fetchall()
-        ]
-        alerts = [
-            dict(row) for row in connection.execute(
-                "SELECT id, title, message, read, created_at FROM alerts WHERE user_id = ? ORDER BY id DESC",
-                (session["user_id"],),
-            ).fetchall()
-        ]
+    restaurants = get_restaurants()
+    alerts = get_alerts()
     return render_template(
         "index.html",
         orders=orders,
@@ -342,17 +449,10 @@ def sincronizar_demo():
     for platform, customer, total in demo_orders:
         add_order(platform, customer, total)
 
-    with get_db() as connection:
-        connection.execute(
-            "INSERT INTO alerts (user_id, title, message, created_at) VALUES (?, ?, ?, ?)",
-            (
-                session["user_id"],
-                "Sincronización de prueba",
-                "Se agregaron pedidos demostrativos de las tres plataformas.",
-                datetime.utcnow().isoformat(),
-            ),
-        )
-        connection.commit()
+    add_alert(
+        "Sincronización de prueba",
+        "Se agregaron pedidos demostrativos de las tres plataformas.",
+    )
     return redirect(url_for("inicio"))
 
 
@@ -363,12 +463,7 @@ def crear_restaurante():
     name = request.form["name"].strip()
     address = request.form.get("address", "").strip()
     if name:
-        with get_db() as connection:
-            connection.execute(
-                "INSERT INTO restaurants (user_id, name, address, created_at) VALUES (?, ?, ?, ?)",
-                (session["user_id"], name, address, datetime.utcnow().isoformat()),
-            )
-            connection.commit()
+        add_restaurant(name, address)
     return redirect(url_for("inicio"))
 
 
@@ -376,12 +471,7 @@ def crear_restaurante():
 def leer_alerta(alert_id):
     if not session.get("user_id"):
         return redirect(url_for("login_page"))
-    with get_db() as connection:
-        connection.execute(
-            "UPDATE alerts SET read = 1 WHERE id = ? AND user_id = ?",
-            (alert_id, session["user_id"]),
-        )
-        connection.commit()
+    mark_alert_read(alert_id)
     return redirect(url_for("inicio"))
 
 
