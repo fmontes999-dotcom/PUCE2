@@ -22,6 +22,55 @@
     </header>
 
     <main id="inicio">
+        <section class="order-manager" aria-labelledby="pedidos-titulo">
+            <div class="section-heading">
+                <p class="eyebrow">Panel operativo</p>
+                <h2 id="pedidos-titulo">Pedidos en tiempo real</h2>
+            </div>
+            <form class="order-form" action="{{ url_for('crear_pedido') }}" method="post">
+                <label>
+                    Plataforma
+                    <select name="platform" required>
+                        <option value="Rappi">Rappi</option>
+                        <option value="PedidosYa">PedidosYa</option>
+                        <option value="Uber Eats">Uber Eats</option>
+                        <option value="Directo">Directo</option>
+                    </select>
+                </label>
+                <label>
+                    Cliente
+                    <input name="customer" maxlength="100" placeholder="Nombre del cliente" required>
+                </label>
+                <label>
+                    Total
+                    <input name="total" type="number" min="0" step="0.01" placeholder="0.00" required>
+                </label>
+                <button class="button button-primary" type="submit">Agregar pedido</button>
+            </form>
+            <div class="orders-list">
+                {% for order in orders %}
+                <article class="order-row">
+                    <div>
+                        <strong>{{ order.customer }}</strong>
+                        <span>{{ order.platform }}</span>
+                    </div>
+                    <b>${{ "%.2f"|format(order.total) }}</b>
+                    <form action="{{ url_for('actualizar_estado', order_id=order.id) }}" method="post">
+                        <select name="status" aria-label="Estado del pedido">
+                            <option value="nuevo" {% if order.status == 'nuevo' %}selected{% endif %}>Nuevo</option>
+                            <option value="preparando" {% if order.status == 'preparando' %}selected{% endif %}>Preparando</option>
+                            <option value="listo" {% if order.status == 'listo' %}selected{% endif %}>Listo</option>
+                            <option value="entregado" {% if order.status == 'entregado' %}selected{% endif %}>Entregado</option>
+                        </select>
+                        <button type="submit">Actualizar</button>
+                    </form>
+                </article>
+                {% else %}
+                <p class="empty-orders">Aún no hay pedidos registrados.</p>
+                {% endfor %}
+            </div>
+        </section>
+
         <section class="hero">
             <div class="hero-copy">
                 <p class="eyebrow">Pedidos inteligentes para restaurantes</p>
