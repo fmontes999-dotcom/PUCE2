@@ -17,6 +17,17 @@ if supabase_url and supabase_key:
     supabase = create_client(supabase_url, supabase_key)
 
 
+def get_supabase_for_session():
+    if not supabase or not session.get("supabase_access_token"):
+        return None
+    client = create_client(supabase_url, supabase_key)
+    client.auth.set_session(
+        session["supabase_access_token"],
+        session.get("supabase_refresh_token", ""),
+    )
+    return client
+
+
 def get_db():
     connection = sqlite3.connect("pedidos.db")
     connection.row_factory = sqlite3.Row
@@ -70,6 +81,22 @@ def register_page():
 def login():
     email = request.form["email"].strip().lower()
     password = request.form["password"]
+
+    if supabase:
+        try:
+            auth = supabase.auth.sign_in_with_password({
+                "email": email,
+                "password": password,
+            })
+            if auth.user and auth.session:
+                session["user_id"] = auth.user.id
+                session["email"] = email
+                session["supabase_access_token"] = auth.session.access_token
+                session["supabase_refresh_token"] = auth.session.refresh_token
+                return redirect(url_for("inicio"))
+        except Exception:
+            pass
+
     with get_db() as connection:
         user = connection.execute(
             "SELECT id, email, password_hash FROM users WHERE email = ?",
@@ -90,6 +117,26 @@ def register():
     if len(password) < 8:
         flash("La contraseña debe tener al menos 8 caracteres.")
         return redirect(url_for("register_page"))
+
+    if supabase:
+        try:
+            auth = supabase.auth.sign_up({
+                "email": email,
+                "password": password,
+            })
+            if auth.user:
+                if auth.session:
+                    session["user_id"] = auth.user.id
+                    session["email"] = email
+                    session["supabase_access_token"] = auth.session.access_token
+                    session["supabase_refresh_token"] = auth.session.refresh_token
+                    return redirect(url_for("inicio"))
+                flash("Cuenta creada. Revisa tu correo para confirmar la cuenta.")
+                return redirect(url_for("login_page"))
+        except Exception as error:
+            flash("No se pudo crear la cuenta.")
+            return redirect(url_for("register_page"))
+
     try:
         with get_db() as connection:
             cursor = connection.execute(
@@ -117,9 +164,10 @@ def get_orders():
     if not user_id:
         return []
 
-    if supabase:
+    authenticated_supabase = get_supabase_for_session()
+    if authenticated_supabase:
         try:
-            response = supabase.table("orders").select("*").eq("user_id", user_id).order("created_at", desc=True).execute()
+            response = authenticated_supabase.table("orders").select("*").order("created_at", desc=True).execute()
             return response.data
         except Exception:
             pass
@@ -136,9 +184,10 @@ def add_order(platform, customer, total):
     if not user_id:
         return
 
-    if supabase:
+    authenticated_supabase = get_supabase_for_session()
+    if authenticated_supabase:
         try:
-            supabase.table("orders").insert({
+            authenticated_supabase.table("orders").insert({
                 "platform": platform,
                 "customer": customer,
                 "total": float(total),
@@ -158,9 +207,10 @@ def add_order(platform, customer, total):
 
 
 def update_order(order_id, status):
-    if supabase:
+    authenticated_supabase = get_supabase_for_session()
+    if authenticated_supabase:
         try:
-            supabase.table("orders").update({
+            authenticated_supabase.table("orders").update({
                 "status": status
             }).eq("id", order_id).execute()
             return
