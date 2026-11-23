@@ -1,4 +1,5 @@
 import os
+import random
 import sqlite3
 from datetime import datetime
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -78,6 +79,14 @@ def ensure_sqlite():
                 message TEXT NOT NULL,
                 read INTEGER NOT NULL DEFAULT 0,
                 created_at TEXT NOT NULL
+            )"""
+        )
+        connection.execute(
+            """CREATE TABLE IF NOT EXISTS connections (
+                user_id TEXT NOT NULL,
+                platform TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                PRIMARY KEY (user_id, platform)
             )"""
         )
         connection.commit()
@@ -397,16 +406,19 @@ def inicio():
         1 for order in today_orders
         if order.get("status") not in ("entregado", "cancelado")
     )
+    connected = get_connections()
     metrics = {
         "today": len(today_orders),
         "active": active,
         "sales": sales,
-        "connections": 3,
+        "connections": len(connected),
     }
     restaurants = get_restaurants()
     alerts = get_alerts()
     return render_template(
         "index.html",
+        platforms=PLATFORMS,
+        connected=connected,
         orders=orders,
         metrics=metrics,
         today=datetime.utcnow().strftime("%A, %d de %B"),
@@ -436,24 +448,153 @@ def estado():
     return {"estado": "ok"}
 
 
-@app.post("/demo/sincronizar")
-def sincronizar_demo():
+# ---------------------------------------------------------------------------
+# Integraciones con plataformas de delivery (MODO DEMO).
+# Los formatos de pedido son versiones simplificadas inspiradas en la
+# documentación de cada plataforma. Para producción hay que pedir acceso a sus
+# APIs de partners y ajustar estos normalizadores al formato real.
+# ---------------------------------------------------------------------------
+
+def _parse_uber_eats(payload):
+    eater = payload.get("eater", {})
+    name = f'{eater.get("first_name", "")} {eater.get("last_name", "")}'.strip()
+    cents = payload["payment"]["charges"]["total"]["amount"]
+    return f'#{payload.get("display_id", payload.get("id", "?"))} · {name or "Cliente"}', cents / 100
+
+
+def _parse_rappi(payload):
+    customer = payload.get("customer", {})
+    name = f'{customer.get("first_name", "")} {customer.get("last_name", "")}'.strip()
+    return f'#{payload.get("order_id", "?")} · {name or "Cliente"}', payload["totals"]["total_order"]
+
+
+def _parse_pedidosya(payload):
+    name = payload.get("user", {}).get("name", "Cliente")
+    return f'#{payload.get("code", "?")} · {name}', payload["payment"]["amount"]
+
+
+PLATFORMS = {
+    "ubereats": {"label": "Uber Eats", "parse": _parse_uber_eats},
+    "rappi": {"label": "Rappi", "parse": _parse_rappi},
+    "pedidosya": {"label": "PedidosYa", "parse": _parse_pedidosya},
+}
+
+
+def sample_payload(platform):
+    code = f"{random.randint(1000, 9999)}"
+    name_first, name_last = random.choice(
+        [("Ana", "Torres"), ("Luis", "Mora"), ("Carla", "Vega"), ("Diego", "Salas")]
+    )
+    total = round(random.uniform(8, 60), 2)
+    if platform == "ubereats":
+        return {
+            "id": f"uber-{code}", "display_id": code,
+            "eater": {"first_name": name_first, "last_name": name_last},
+            "payment": {"charges": {"total": {"amount": int(total * 100), "currency_code": "USD"}}},
+        }
+    if platform == "rappi":
+        return {
+            "order_id": code,
+            "customer": {"first_name": name_first, "last_name": name_last},
+            "totals": {"total_order": total},
+        }
+    return {
+        "code": code,
+        "user": {"name": f"{name_first} {name_last}"},
+        "payment": {"amount": total},
+    }
+
+
+def get_connections():
+    user_id = session["user_id"]
+    client = get_supabase_for_session()
+    if client:
+        try:
+            response = client.table("connections").select("platform").execute()
+            return {row["platform"] for row in response.data}
+        except Exception:
+            pass
+    with get_db() as connection:
+        rows = connection.execute(
+            "SELECT platform FROM connections WHERE user_id = ?", (user_id,)
+        ).fetchall()
+        return {row["platform"] for row in rows}
+
+
+def set_connection(platform, connected):
+    user_id = session["user_id"]
+    client = get_supabase_for_session()
+    if client:
+        try:
+            if connected:
+                client.table("connections").upsert(
+                    {"user_id": user_id, "platform": platform},
+                    on_conflict="user_id,platform",
+                ).execute()
+            else:
+                client.table("connections").delete().eq("platform", platform).execute()
+            return
+        except Exception:
+            pass
+    with get_db() as connection:
+        if connected:
+            connection.execute(
+                "INSERT OR IGNORE INTO connections (user_id, platform, created_at) VALUES (?, ?, ?)",
+                (user_id, platform, datetime.utcnow().isoformat()),
+            )
+        else:
+            connection.execute(
+                "DELETE FROM connections WHERE user_id = ? AND platform = ?",
+                (user_id, platform),
+            )
+        connection.commit()
+
+
+def ingest_order(platform, payload):
+    """Convierte un pedido de una plataforma a nuestro formato y lo guarda."""
+    info = PLATFORMS[platform]
+    customer, total = info["parse"](payload)
+    add_order(info["label"], customer, total)
+    add_alert(f'Nuevo pedido de {info["label"]}', f"{customer} · ${float(total):.2f}")
+
+
+@app.post("/conexiones/<platform>/<action>")
+def cambiar_conexion(platform, action):
     if not session.get("user_id"):
         return redirect(url_for("login_page"))
+    if platform in PLATFORMS and action in ("conectar", "desconectar"):
+        set_connection(platform, action == "conectar")
+    return redirect(url_for("inicio") + "#conexiones")
 
-    demo_orders = [
-        ("Rappi", "Pedido Rappi", 41.69),
-        ("PedidosYa", "Pedido PedidosYa", 48.88),
-        ("Uber Eats", "Pedido Uber Eats", 22.43),
-    ]
-    for platform, customer, total in demo_orders:
-        add_order(platform, customer, total)
 
-    add_alert(
-        "Sincronización de prueba",
-        "Se agregaron pedidos demostrativos de las tres plataformas.",
-    )
-    return redirect(url_for("inicio"))
+@app.post("/demo/pedido-entrante/<platform>")
+def pedido_entrante_demo(platform):
+    if not session.get("user_id"):
+        return redirect(url_for("login_page"))
+    if platform in PLATFORMS and platform in get_connections():
+        ingest_order(platform, sample_payload(platform))
+    return redirect(url_for("inicio") + "#pedidos")
+
+
+@app.post("/webhooks/<platform>")
+def webhook(platform):
+    # En modo demo exige sesión. En producción este endpoint lo llamaría la
+    # plataforma y habría que identificar al restaurante (token/store id) y
+    # guardar con una clave de servicio de Supabase.
+    if platform not in PLATFORMS:
+        return {"error": "plataforma desconocida"}, 404
+    if not session.get("user_id"):
+        return {"error": "modo demo: requiere sesión"}, 401
+    if platform not in get_connections():
+        return {"error": "plataforma no conectada"}, 409
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return {"error": "JSON inválido"}, 400
+    try:
+        ingest_order(platform, payload)
+    except (KeyError, TypeError, ValueError):
+        return {"error": "formato de pedido inválido"}, 422
+    return {"estado": "recibido"}, 201
 
 
 @app.post("/restaurantes")

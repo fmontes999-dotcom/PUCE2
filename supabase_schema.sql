@@ -58,3 +58,19 @@ create policy "Users manage their own alerts"
     on public.alerts for all
     using (auth.uid() = user_id)
     with check (auth.uid() = user_id);
+
+-- Conexiones con plataformas de delivery (modo demo)
+create table if not exists public.connections (
+    user_id uuid not null references auth.users(id) on delete cascade,
+    platform text not null,
+    created_at timestamptz not null default now(),
+    primary key (user_id, platform)
+);
+
+alter table public.connections enable row level security;
+
+drop policy if exists "Users manage their own connections" on public.connections;
+create policy "Users manage their own connections"
+    on public.connections for all
+    using (auth.uid() = user_id)
+    with check (auth.uid() = user_id);

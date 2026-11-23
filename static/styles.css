@@ -407,7 +407,23 @@ button, input, select { font: inherit; }
 .channel.rappi { background: #dc5039; }
 .channel.pedidos { background: #d75a42; }
 .channel.uber { background: #252a36; }
-.demo-sync { margin-top: 12px; }
+.demo-note {
+    margin: 0 0 12px;
+    padding: 10px 12px;
+    border: 1px dashed #d8d4c9;
+    border-radius: 10px;
+    background: #fffaf0;
+    color: #7a6a3a;
+    font-family: Arial, sans-serif;
+    font-size: 12px;
+    line-height: 1.5;
+}
+.connection-card { flex-wrap: wrap; }
+.connection-card > div:nth-child(2) { flex: 1; min-width: 100px; }
+.connection-actions { display: flex; gap: 6px; width: 100%; }
+.connection-actions form { margin: 0; }
+.status.on { color: #1f8a4c !important; font-weight: 700; }
+.status.off { color: #96999e; }
 .operations-grid {
     max-width: 1080px;
     display: grid;

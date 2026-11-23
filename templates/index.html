@@ -166,14 +166,34 @@
                             <h2>Conexiones</h2>
                         </div>
                     </div>
+                    <p class="demo-note">Modo demostración: las conexiones y los pedidos entrantes son simulados. Para usar las plataformas reales se necesita la aprobación de cada una (Rappi Partners, PedidosYa Partner API y Uber Eats Marketplace).</p>
                     <div class="connection-grid">
-                        <article><span class="channel rappi">R</span><div><strong>Rappi</strong><small>Configuración pendiente</small></div></article>
-                        <article><span class="channel pedidos">P</span><div><strong>PedidosYa</strong><small>Configuración pendiente</small></div></article>
-                        <article><span class="channel uber">U</span><div><strong>Uber Eats</strong><small>Configuración pendiente</small></div></article>
+                        {% set channel_class = {'rappi': 'rappi', 'pedidosya': 'pedidos', 'ubereats': 'uber'} %}
+                        {% for key, info in platforms.items() %}
+                        {% set is_connected = key in connected %}
+                        <article class="connection-card">
+                            <span class="channel {{ channel_class[key] }}">{{ info.label[0] }}</span>
+                            <div>
+                                <strong>{{ info.label }}</strong>
+                                <small class="status {{ 'on' if is_connected else 'off' }}">{{ 'Conectado (demo)' if is_connected else 'Sin conectar' }}</small>
+                            </div>
+                            <div class="connection-actions">
+                                {% if is_connected %}
+                                <form action="{{ url_for('pedido_entrante_demo', platform=key) }}" method="post">
+                                    <button class="button orange compact" type="submit">Simular pedido</button>
+                                </form>
+                                <form action="{{ url_for('cambiar_conexion', platform=key, action='desconectar') }}" method="post">
+                                    <button class="button outline compact" type="submit">Desconectar</button>
+                                </form>
+                                {% else %}
+                                <form action="{{ url_for('cambiar_conexion', platform=key, action='conectar') }}" method="post">
+                                    <button class="button orange compact" type="submit">Conectar</button>
+                                </form>
+                                {% endif %}
+                            </div>
+                        </article>
+                        {% endfor %}
                     </div>
-                    <form action="{{ url_for('sincronizar_demo') }}" method="post" class="demo-sync">
-                        <button class="button outline" type="submit">Sincronizar demostración</button>
-                    </form>
                 </section>
 
                 <section class="operations-grid">
