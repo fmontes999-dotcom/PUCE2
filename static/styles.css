@@ -530,3 +530,196 @@ button, input, select { font: inherit; }
     .operations-grid { grid-template-columns: 1fr; }
     .restaurant-form { grid-template-columns: 1fr; }
 }
+
+/* ---------- Logo, notificaciones y chips de plataforma ---------- */
+.brand-logo { display: block; border-radius: 10px; }
+.auth-brand img { display: block; border-radius: 10px; }
+.icon-button.bell { position: relative; display: grid; place-items: center; text-decoration: none; }
+.badge {
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    display: grid;
+    place-items: center;
+    border-radius: 9px;
+    background: var(--orange);
+    color: white;
+    font: 700 11px Arial, sans-serif;
+}
+.metrics-grid { grid-template-columns: repeat(4, 1fr); }
+.chip {
+    display: inline-block;
+    padding: 2px 9px;
+    border-radius: 999px;
+    background: #e9e7df;
+    color: #3a3d4a;
+    font: 700 11px Arial, sans-serif;
+}
+.chip-ubereats { background: #252a36; color: #fff; }
+.chip-rappi { background: #dc5039; color: #fff; }
+.chip-pedidosya { background: #f6d3ca; color: #8f2c14; }
+.order-source { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+.order-source small { color: #8a8d99; font-family: Arial, sans-serif; }
+.order-client .dishes { display: block; margin-top: 3px; line-height: 1.4; }
+
+/* ---------- Reportes y gráficos ---------- */
+.reports, .roadmap { max-width: 1080px; margin-top: 34px; }
+.live-chip {
+    padding: 5px 12px;
+    border: 1px solid #cfe6d6;
+    border-radius: 999px;
+    background: #eef8f1;
+    color: #1f6b3a;
+    font: 700 12px Arial, sans-serif;
+}
+.viz {
+    --viz-bar: #2a78d6;
+    --viz-ink: #0b0b0b;
+    --viz-ink-2: #52514e;
+    --viz-muted: #898781;
+    --viz-grid: #e1e0d9;
+    --viz-base: #c3c2b7;
+    font-family: Arial, sans-serif;
+}
+.charts-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.chart-card {
+    padding: 20px 22px 22px;
+    border: 1px solid #e2dfd5;
+    border-radius: 14px;
+    background: white;
+}
+.chart-card h3 { margin: 0; font-size: 18px; }
+.chart-sub { margin: 4px 0 18px; color: var(--viz-muted); font-size: 12px; }
+
+.rank { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.rank li {
+    display: grid;
+    grid-template-columns: 38% 1fr;
+    align-items: center;
+    gap: 10px;
+    min-height: 26px;
+    border-radius: 6px;
+    outline-offset: 2px;
+}
+.rank-name {
+    color: var(--viz-ink-2);
+    font-size: 13px;
+    line-height: 1.25;
+    overflow-wrap: anywhere;
+}
+.rank-track {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 20px;
+    border-left: 1px solid var(--viz-base);
+}
+.rank-bar {
+    flex: none;
+    height: 18px;
+    min-width: 2px;
+    border-radius: 0 4px 4px 0;
+    background: var(--viz-bar);
+    transition: opacity .15s;
+}
+.rank li:hover .rank-bar, .rank li:focus .rank-bar { opacity: .8; }
+.rank-val { color: var(--viz-ink); font-size: 13px; font-weight: 700; white-space: nowrap; }
+
+.columns { display: grid; grid-template-columns: 30px 1fr; gap: 6px; height: 170px; }
+.col-axis { position: relative; height: 130px; }
+.col-axis span {
+    position: absolute;
+    right: 0;
+    transform: translateY(50%);
+    color: var(--viz-muted);
+    font-size: 11px;
+}
+.col-plot {
+    position: relative;
+    display: grid;
+    grid-template-columns: repeat(12, 1fr);
+    gap: 4px;
+    height: 100%;
+    border-bottom: 1px solid var(--viz-base);
+}
+.grid-line {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 0;
+    border-top: 1px solid var(--viz-grid);
+    transform: translateY(1px);
+}
+.col { position: relative; display: flex; flex-direction: column; align-items: center; outline-offset: 2px; border-radius: 4px; }
+.col-track { width: 100%; height: 130px; display: flex; align-items: flex-end; justify-content: center; }
+.col-bar {
+    width: 100%;
+    max-width: 24px;
+    border-radius: 4px 4px 0 0;
+    background: var(--viz-bar);
+    transition: opacity .15s;
+}
+.col:hover .col-bar, .col:focus .col-bar { opacity: .8; }
+.col small { margin-top: 6px; color: var(--viz-muted); font-size: 10px; }
+
+.viz-tip {
+    position: fixed;
+    z-index: 50;
+    max-width: 260px;
+    padding: 8px 11px;
+    border-radius: 8px;
+    background: #171b2a;
+    color: #fff;
+    font: 12px/1.35 Arial, sans-serif;
+    pointer-events: none;
+    box-shadow: 0 8px 24px rgba(0,0,0,.2);
+}
+.viz-tip[hidden] { display: none; }
+
+/* ---------- Hoja de ruta ---------- */
+.roadmap-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.roadmap-grid article {
+    display: grid;
+    grid-template-columns: 40px 1fr;
+    gap: 6px 12px;
+    padding: 16px;
+    border: 1px solid #e2dfd5;
+    border-radius: 12px;
+    background: white;
+}
+.roadmap-grid article div { display: grid; gap: 4px; }
+.roadmap-grid small { color: #8a8d99; font: 12px/1.4 Arial, sans-serif; }
+.road-icon {
+    width: 40px;
+    height: 40px;
+    display: grid;
+    place-items: center;
+    border-radius: 10px;
+    background: #20263a;
+    color: #f7b35f;
+    font-size: 18px;
+}
+.road-chip {
+    grid-column: 2;
+    justify-self: start;
+    padding: 3px 10px;
+    border-radius: 999px;
+    background: #f1efe7;
+    color: #6b6e7b;
+    font: 700 11px Arial, sans-serif;
+}
+.road-chip.done { background: #eef8f1; color: #1f6b3a; }
+
+@media (max-width: 1100px) {
+    .metrics-grid { grid-template-columns: 1fr 1fr; }
+    .charts-grid { grid-template-columns: 1fr; }
+    .roadmap-grid { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 760px) {
+    .metrics-grid, .roadmap-grid { grid-template-columns: 1fr; }
+}
+.report-actions { display: flex; align-items: center; gap: 10px; }
+.report-actions form { margin: 0; }

@@ -1,7 +1,8 @@
 import os
 import random
+import re
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from flask import Flask, flash, redirect, render_template, request, session, url_for
@@ -391,16 +392,104 @@ def mark_alert_read(alert_id):
         connection.commit()
 
 
+QUITO_UTC_OFFSET = timedelta(hours=-5)
+DAYS_ES = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
+MONTHS_ES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto",
+             "septiembre", "octubre", "noviembre", "diciembre"]
+DISH_RE = re.compile(r"^(\d+)× (.+)$")
+BAR_MAX_PCT = 78  # ancho máximo de la barra; el resto queda para el valor
+
+
+def _parse_created(value):
+    try:
+        moment = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if moment.tzinfo is not None:
+        moment = moment.astimezone(timezone.utc).replace(tzinfo=None)
+    return moment
+
+
+def _ranked(totals, limit, money):
+    """Convierte {nombre: (valor, pedidos)} en filas ordenadas para las barras."""
+    rows = sorted(totals.items(), key=lambda item: item[1][0], reverse=True)[:limit]
+    top = max((value for _, (value, _) in rows), default=0) or 1
+    result = []
+    for name, (value, count) in rows:
+        shown = f"${value:,.2f}" if money else f"{int(value)}"
+        unit = "pedidos" if count != 1 else "pedido"
+        tip = f"{name}: {shown} · {count} {unit}" if money else f"{name}: {shown} unidades"
+        result.append({
+            "label": name, "shown": shown, "tip": tip,
+            "pct": round(BAR_MAX_PCT * value / top, 1),
+        })
+    return result
+
+
+def build_report(orders):
+    platforms, restaurants, dishes = {}, {}, {}
+    now = datetime.utcnow() + QUITO_UTC_OFFSET
+    slots = [
+        (now - timedelta(hours=back)).replace(minute=0, second=0, microsecond=0)
+        for back in range(11, -1, -1)
+    ]
+    hour_counts = {slot: 0 for slot in slots}
+    total = 0.0
+
+    for order in orders:
+        amount = float(order.get("total") or 0)
+        total += amount
+        base, _, restaurant = str(order.get("platform", "")).partition(" · ")
+        for table, key in ((platforms, base), (restaurants, restaurant)):
+            if key:
+                value, count = table.get(key, (0.0, 0))
+                table[key] = (value + amount, count + 1)
+        _, _, items = str(order.get("customer", "")).partition(" — ")
+        for part in items.split(", ") if items else []:
+            match = DISH_RE.match(part)
+            if match:
+                name = match.group(2)
+                value, count = dishes.get(name, (0, 0))
+                dishes[name] = (value + int(match.group(1)), count + 1)
+        created = _parse_created(order.get("created_at"))
+        if created:
+            slot = (created + QUITO_UTC_OFFSET).replace(minute=0, second=0, microsecond=0)
+            if slot in hour_counts:
+                hour_counts[slot] += 1
+
+    peak = max(hour_counts.values(), default=0)
+    hours = [
+        {
+            "label": f"{slot.hour}h",
+            "count": count,
+            "pct": round(100 * count / peak, 1) if peak else 0,
+        }
+        for slot, count in hour_counts.items()
+    ]
+    return {
+        "orders": len(orders),
+        "sales": total,
+        "avg": total / len(orders) if orders else 0,
+        "platforms": _ranked(platforms, 3, money=True),
+        "restaurants": _ranked(restaurants, 5, money=True),
+        "dishes": _ranked(dishes, 5, money=False),
+        "hours": hours,
+        "peak": peak,
+        "half": peak // 2 if peak >= 4 else None,
+    }
+
+
 @app.get("/")
 def inicio():
     if not session.get("user_id"):
         return redirect(url_for("login_page"))
     orders = get_orders()
-    today_prefix = datetime.utcnow().date().isoformat()
-    today_orders = [
-        order for order in orders
-        if str(order.get("created_at", "")).startswith(today_prefix)
-    ]
+    now_quito = datetime.utcnow() + QUITO_UTC_OFFSET
+    today_orders = []
+    for order in orders:
+        created = _parse_created(order.get("created_at"))
+        if created and (created + QUITO_UTC_OFFSET).date() == now_quito.date():
+            today_orders.append(order)
     sales = sum(float(order.get("total", 0) or 0) for order in today_orders)
     active = sum(
         1 for order in today_orders
@@ -419,9 +508,11 @@ def inicio():
         "index.html",
         platforms=PLATFORMS,
         connected=connected,
+        report=build_report(orders),
+        unread=sum(1 for alert in alerts if not alert.get("read")),
         orders=orders,
         metrics=metrics,
-        today=datetime.utcnow().strftime("%A, %d de %B"),
+        today=f"{DAYS_ES[now_quito.weekday()]}, {now_quito.day} de {MONTHS_ES[now_quito.month - 1]}",
         restaurants=restaurants,
         alerts=alerts,
     )
@@ -638,6 +729,67 @@ def pedido_entrante_demo(platform):
     if platform in PLATFORMS and platform in get_connections():
         ingest_order(platform, sample_payload(platform))
     return redirect(url_for("inicio") + "#pedidos")
+
+
+# Pedidos por hora del día en Quito: picos en el almuerzo y la cena.
+HOURLY_WEIGHT = {8: 1, 9: 1, 10: 2, 11: 3, 12: 6, 13: 7, 14: 4, 15: 1, 16: 1,
+                 17: 2, 18: 4, 19: 7, 20: 6, 21: 3, 22: 1}
+
+
+def demo_history_rows():
+    now_utc = datetime.utcnow()
+    rows = []
+    for back in range(11, -1, -1):
+        slot_utc = (now_utc - timedelta(hours=back)).replace(minute=0, second=0, microsecond=0)
+        clock_hour = (slot_utc + QUITO_UTC_OFFSET).hour
+        is_current = back == 0
+        for _ in range(HOURLY_WEIGHT.get(clock_hour, 0)):
+            max_minute = now_utc.minute if is_current else 59
+            created = slot_utc + timedelta(minutes=random.randint(0, max_minute), seconds=random.randint(0, 59))
+            restaurant = random.choice(QUITO_DEMO)
+            dishes = random.sample(restaurant["menu"], k=random.randint(1, min(3, len(restaurant["menu"]))))
+            lines = [(dish, price, random.randint(1, 2)) for dish, price in dishes]
+            total = round(sum(price * qty for _, price, qty in lines) + DELIVERY_FEE, 2)
+            first, last = random.choice(QUITO_CUSTOMERS)
+            label = PLATFORMS[random.choice(list(PLATFORMS))]["label"]
+            recent = (now_utc - created) < timedelta(hours=1)
+            rows.append({
+                "platform": f'{label} · {restaurant["name"]}',
+                "customer": _label(random.randint(1000, 9999), f"{first} {last}",
+                                   [(dish, qty) for dish, _, qty in lines]),
+                "total": total,
+                "status": random.choice(["nuevo", "preparando", "listo"]) if recent else "entregado",
+                "created_at": created.isoformat(),
+            })
+    return rows
+
+
+def add_orders_bulk(rows):
+    user_id = session["user_id"]
+    client = get_supabase_for_session()
+    if client:
+        try:
+            client.table("orders").insert([{**row, "user_id": user_id} for row in rows]).execute()
+            return
+        except Exception:
+            pass
+    with get_db() as connection:
+        connection.executemany(
+            "INSERT INTO orders (platform, customer, total, status, created_at, user_id) VALUES (?, ?, ?, ?, ?, ?)",
+            [(r["platform"], r["customer"], r["total"], r["status"], r["created_at"], user_id) for r in rows],
+        )
+        connection.commit()
+
+
+@app.post("/demo/historial")
+def historial_demo():
+    if not session.get("user_id"):
+        return redirect(url_for("login_page"))
+    rows = demo_history_rows()
+    if rows:
+        add_orders_bulk(rows)
+        add_alert("Historial de ejemplo cargado", f"Se agregaron {len(rows)} pedidos de las últimas 12 horas.")
+    return redirect(url_for("inicio") + "#reportes")
 
 
 @app.post("/demo/hora-pico")

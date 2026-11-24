@@ -4,6 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Panel · Smart Order</title>
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='logo.svg') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
     <script defer src="{{ url_for('static', filename='main.js') }}"></script>
 </head>
@@ -11,7 +12,7 @@
     <div class="app-shell">
         <aside class="sidebar">
             <a class="sidebar-brand" href="/" aria-label="Smart Order">
-                <span class="brand-gem">S</span>
+                <img class="brand-logo" src="{{ url_for('static', filename='logo.svg') }}" alt="" width="38" height="38">
                 <span>Smart Order</span>
             </a>
             <nav class="sidebar-nav" aria-label="Panel">
@@ -50,7 +51,7 @@
                     <strong>Panel</strong>
                 </div>
                 <div class="topbar-actions">
-                    <button type="button" class="icon-button" title="Notificaciones">♧</button>
+                    <a class="icon-button bell" href="#notificaciones" title="Notificaciones">♧{% if unread %}<span class="badge">{{ unread }}</span>{% endif %}</a>
                     <button type="button" class="icon-button" title="Configuración">⚙</button>
                 </div>
             </header>
@@ -77,7 +78,7 @@
                     </div>
                 </section>
 
-                <section class="metrics-grid" id="reportes">
+                <section class="metrics-grid">
                     <article class="metric-card accent">
                         <p>Pedidos hoy</p>
                         <strong>{{ metrics.today }}</strong>
@@ -89,10 +90,97 @@
                         <small>Registradas hoy</small>
                     </article>
                     <article class="metric-card">
+                        <p>Ticket promedio</p>
+                        <strong>${{ "%.2f"|format(report.avg) }}</strong>
+                        <small>{{ report.orders }} pedidos en total</small>
+                    </article>
+                    <article class="metric-card">
                         <p>Plataformas</p>
-                        <strong>{{ metrics.connections }}</strong>
+                        <strong>{{ metrics.connections }} / 3</strong>
                         <small>Rappi · PedidosYa · Uber Eats</small>
                     </article>
+                </section>
+
+                {% macro rank(items) %}
+                <ul class="rank">
+                    {% for item in items %}
+                    <li data-tip="{{ item.tip }}" tabindex="0">
+                        <span class="rank-name">{{ item.label }}</span>
+                        <span class="rank-track">
+                            <span class="rank-bar" style="width: {{ item.pct }}%"></span>
+                            <span class="rank-val">{{ item.shown }}</span>
+                        </span>
+                    </li>
+                    {% endfor %}
+                </ul>
+                {% endmacro %}
+
+                <section class="reports" id="reportes">
+                    <div class="section-head">
+                        <div>
+                            <p>Reportes</p>
+                            <h2>Cómo va el negocio</h2>
+                        </div>
+                        <div class="report-actions">
+                            <form action="{{ url_for('historial_demo') }}" method="post">
+                                <button class="button outline compact" type="submit">Cargar historial de ejemplo</button>
+                            </form>
+                            <span class="live-chip">Datos en vivo</span>
+                        </div>
+                    </div>
+                    {% if report.orders %}
+                    <div class="charts-grid viz">
+                        <article class="chart-card">
+                            <h3>Ventas por plataforma</h3>
+                            <p class="chart-sub">Total vendido, en dólares</p>
+                            {{ rank(report.platforms) }}
+                        </article>
+
+                        <article class="chart-card">
+                            <h3>Pedidos por hora</h3>
+                            <p class="chart-sub">Últimas 12 horas, hora de Quito</p>
+                            <div class="columns" role="img" aria-label="Pedidos por hora. Pico: {{ report.peak }} pedidos.">
+                                <div class="col-axis" aria-hidden="true">
+                                    <span style="bottom: 100%">{{ report.peak }}</span>
+                                    {% if report.half %}<span style="bottom: 50%">{{ report.half }}</span>{% endif %}
+                                    <span style="bottom: 0">0</span>
+                                </div>
+                                <div class="col-plot">
+                                    <i class="grid-line" style="bottom: 100%"></i>
+                                    {% if report.half %}<i class="grid-line" style="bottom: 50%"></i>{% endif %}
+                                    {% for hour in report.hours %}
+                                    <div class="col" data-tip="{{ hour.count }} {{ 'pedido' if hour.count == 1 else 'pedidos' }} a las {{ hour.label }}" tabindex="0">
+                                        <span class="col-track">
+                                            {% if hour.count %}<span class="col-bar" style="height: {{ hour.pct }}%"></span>{% endif %}
+                                        </span>
+                                        <small>{{ hour.label }}</small>
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                        </article>
+
+                        <article class="chart-card">
+                            <h3>Platos más pedidos</h3>
+                            <p class="chart-sub">Unidades vendidas, top 5</p>
+                            {{ rank(report.dishes) }}
+                        </article>
+
+                        <article class="chart-card">
+                            <h3>Ventas por restaurante</h3>
+                            <p class="chart-sub">Total vendido, top 5</p>
+                            {{ rank(report.restaurants) }}
+                        </article>
+                    </div>
+                    {% else %}
+                    <div class="empty-state">
+                        <span>0</span>
+                        <div>
+                            <strong>Aún no hay datos para graficar</strong>
+                            <small>Pulsa “Cargar historial de ejemplo” para ver cómo luce un día de operación.</small>
+                        </div>
+                    </div>
+                    {% endif %}
                 </section>
 
                 <section class="orders-section" id="pedidos">
@@ -127,11 +215,17 @@
 
                     <div class="orders-list">
                         {% for order in orders %}
+                        {% set source = order.platform.split(' · ', 1) %}
+                        {% set who = order.customer.split(' — ', 1) %}
                         <article class="order-row">
                             <span class="order-status {{ order.status }}"></span>
                             <div class="order-client">
-                                <strong>{{ order.customer }}</strong>
-                                <small>{{ order.platform }}</small>
+                                <strong>{{ who[0] }}</strong>
+                                {% if who|length > 1 %}<small class="dishes">{{ who[1] }}</small>{% endif %}
+                                <span class="order-source">
+                                    <span class="chip chip-{{ source[0]|lower|replace(' ', '') }}">{{ source[0] }}</span>
+                                    {% if source|length > 1 %}<small>{{ source[1] }}</small>{% endif %}
+                                </span>
                             </div>
                             <div class="order-total">
                                 <small>Total</small>
@@ -248,6 +342,47 @@
                         <div class="alert-row"><small>No tienes notificaciones nuevas.</small></div>
                         {% endfor %}
                     </article>
+                </section>
+
+                <section class="roadmap" id="hoja-de-ruta">
+                    <div class="section-head">
+                        <div>
+                            <p>Siguiente etapa</p>
+                            <h2>Qué se puede agregar</h2>
+                        </div>
+                    </div>
+                    <div class="roadmap-grid">
+                        <article>
+                            <span class="road-icon">▤</span>
+                            <div><strong>Pedidos multicanal</strong><small>Rappi, PedidosYa y Uber Eats en un solo panel.</small></div>
+                            <span class="road-chip done">En el prototipo</span>
+                        </article>
+                        <article>
+                            <span class="road-icon">◫</span>
+                            <div><strong>Reportes en vivo</strong><small>Ventas, horas pico y platos más pedidos.</small></div>
+                            <span class="road-chip done">En el prototipo</span>
+                        </article>
+                        <article>
+                            <span class="road-icon">⌸</span>
+                            <div><strong>Menús e inventario</strong><small>Marcar un plato agotado y reflejarlo en todas las plataformas.</small></div>
+                            <span class="road-chip">Próximamente</span>
+                        </article>
+                        <article>
+                            <span class="road-icon">✦</span>
+                            <div><strong>Predicción con IA</strong><small>Sugerir cuánto preparar según las horas pico de cada local.</small></div>
+                            <span class="road-chip">Próximamente</span>
+                        </article>
+                        <article>
+                            <span class="road-icon">✉</span>
+                            <div><strong>Alertas por WhatsApp</strong><small>Aviso al instante cuando entra un pedido o se retrasa.</small></div>
+                            <span class="road-chip">Próximamente</span>
+                        </article>
+                        <article>
+                            <span class="road-icon">❖</span>
+                            <div><strong>Facturación electrónica SRI</strong><small>Facturas automáticas por cada pedido entregado.</small></div>
+                            <span class="road-chip">Próximamente</span>
+                        </article>
+                    </div>
                 </section>
             </div>
         </main>
