@@ -170,6 +170,7 @@ document.querySelectorAll('a[href^="#"]').forEach((link) => {
                 toast(`Nuevo pedido · ${card.dataset.platform}`,
                     `${($("strong", card) || {}).textContent || ""} — ${($("b", card) || {}).textContent || ""}`);
             });
+            fresh.forEach((card) => card.classList.add("is-new"));
             if (fresh.length) beep();
             updateTimers();
             applyFilters();
@@ -288,7 +289,7 @@ document.querySelectorAll('a[href^="#"]').forEach((link) => {
             }).addTo(map);
             const box = document.createElement("div");
             const name = document.createElement("strong");
-            name.textContent = point.name;
+            name.textContent = `${point.icon || "🍴"} ${point.name}`;
             const lines = document.createElement("div");
             lines.textContent = `${point.address} · ${point.orders} pedidos · $${point.sales.toFixed(2)}`;
             box.append(name, lines);
@@ -307,4 +308,57 @@ document.querySelectorAll('a[href^="#"]').forEach((link) => {
     applyFilters();
     setInterval(updateTimers, 30000);
     setInterval(refresh, 5000);
+})();
+
+/* ===== Animaciones de entrada, QR y copiar enlace ===== */
+(() => {
+    const $ = (sel, root = document) => root.querySelector(sel);
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    // Las animaciones de entrada solo corren al abrir la página, no en cada actualización en vivo.
+    setTimeout(() => document.documentElement.classList.remove("intro"), 2400);
+
+    function countUp(el) {
+        const match = el.textContent.trim().match(/^(\$?)(\d+(?:\.\d+)?)$/);
+        if (!match) return;
+        const prefix = match[1];
+        const target = parseFloat(match[2]);
+        const decimals = (match[2].split(".")[1] || "").length;
+        const start = performance.now();
+        const duration = 900;
+        el.textContent = prefix + (0).toFixed(decimals);
+        const step = (now) => {
+            const t = Math.min(1, (now - start) / duration);
+            el.textContent = prefix + (target * (1 - Math.pow(1 - t, 3))).toFixed(decimals);
+            if (t < 1) requestAnimationFrame(step);
+        };
+        requestAnimationFrame(step);
+    }
+    if (!reduced) document.querySelectorAll("#metrics .metric-card strong").forEach(countUp);
+
+    // Ventana con el código QR
+    const dialog = $("#qr-dialog");
+    const open = $("#qr-open");
+    if (dialog && open) {
+        open.addEventListener("click", () => {
+            if (dialog.showModal) dialog.showModal(); else dialog.setAttribute("open", "");
+        });
+        dialog.addEventListener("click", (event) => {
+            if (event.target === dialog) dialog.close();
+        });
+    }
+
+    // Copiar el enlace
+    document.addEventListener("click", async (event) => {
+        const button = event.target.closest("[data-copy]");
+        if (!button) return;
+        const original = button.textContent;
+        try {
+            await navigator.clipboard.writeText(button.dataset.copy);
+            button.textContent = "¡Copiado!";
+        } catch (error) {
+            button.textContent = "Copia el enlace de arriba";
+        }
+        setTimeout(() => { button.textContent = original; }, 1600);
+    });
 })();

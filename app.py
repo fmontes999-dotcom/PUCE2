@@ -7,11 +7,16 @@ import sqlite3
 from datetime import datetime, timedelta, timezone
 from werkzeug.security import check_password_hash, generate_password_hash
 
+import qrcode
+import qrcode.image.svg
 from flask import Flask, Response, flash, redirect, render_template, request, session, url_for
 from supabase import Client, create_client
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 
 app = Flask(__name__)
+# Render pone un proxy delante: así Flask conoce el https y el dominio reales.
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 app.secret_key = os.getenv("SESSION_SECRET", "desarrollo-local-cambiar")
 
 supabase: Client | None = None
@@ -412,7 +417,7 @@ def _parse_created(value):
     return moment
 
 
-def _ranked(totals, limit, money):
+def _ranked(totals, limit, money, icon=None):
     """Convierte {nombre: (valor, pedidos)} en filas ordenadas para las barras."""
     rows = sorted(totals.items(), key=lambda item: item[1][0], reverse=True)[:limit]
     top = max((value for _, (value, _) in rows), default=0) or 1
@@ -422,7 +427,7 @@ def _ranked(totals, limit, money):
         unit = "pedidos" if count != 1 else "pedido"
         tip = f"{name}: {shown} · {count} {unit}" if money else f"{name}: {shown} unidades"
         result.append({
-            "label": name, "shown": shown, "tip": tip,
+            "label": f"{icon(name)} {name}" if icon else name, "shown": shown, "tip": tip,
             "pct": round(BAR_MAX_PCT * value / top, 1),
         })
     return result
@@ -474,15 +479,18 @@ def build_report(orders):
         "avg": total / len(orders) if orders else 0,
         "platforms": _ranked(platforms, 3, money=True),
         "restaurant_totals": restaurants,
-        "restaurants": _ranked(restaurants, 5, money=True),
-        "dishes": _ranked(dishes, 5, money=False),
+        "restaurants": _ranked(restaurants, 5, money=True, icon=restaurant_icon),
+        "dishes": _ranked(dishes, 5, money=False, icon=dish_icon),
         "hours": hours,
         "peak": peak,
         "half": peak // 2 if peak >= 4 else None,
     }
 
 
-STATUS_COLUMNS = [("nuevo", "Nuevo"), ("preparando", "Preparando"), ("listo", "Listo"), ("entregado", "Entregado")]
+STATUS_COLUMNS = [
+    ("nuevo", "Nuevo", "✨"), ("preparando", "Preparando", "👨‍🍳"),
+    ("listo", "Listo", "✅"), ("entregado", "Entregado", "🛵"),
+]
 NEXT_STATUS = {"nuevo": "preparando", "preparando": "listo", "listo": "entregado"}
 NEXT_LABEL = {"preparando": "Preparar", "listo": "Marcar listo", "entregado": "Entregar"}
 VALID_STATUSES = {"nuevo", "preparando", "listo", "entregado", "cancelado", "esperando"}
@@ -504,7 +512,10 @@ def enrich_order(order):
     who, _, dishes = str(order.get("customer", "")).partition(" — ")
     created = _parse_created(order.get("created_at"))
     status = order.get("status") or "nuevo"
+    names = [m.group(2) for m in (DISH_RE.match(p) for p in dishes.split(", ")) if m] if dishes else []
+    icons = "".join(dict.fromkeys(dish_icon(name) for name in names))[:6] or "🍽️"
     return {
+        "icons": icons,
         "id": order["id"], "who": who, "dishes": dishes, "platform": platform,
         "restaurant": restaurant, "total": float(order.get("total") or 0),
         "status": status, "next": NEXT_STATUS.get(status),
@@ -516,11 +527,11 @@ def enrich_order(order):
 def build_board(orders):
     cards = [enrich_order(order) for order in orders]
     columns = []
-    for key, label in STATUS_COLUMNS:
+    for key, label, icon in STATUS_COLUMNS:
         items = [card for card in cards if card["status"] == key]
         extra = max(0, len(items) - DELIVERED_VISIBLE) if key == "entregado" else 0
         columns.append({
-            "key": key, "label": label, "count": len(items),
+            "key": key, "label": label, "icon": icon, "count": len(items),
             "cards": items[:DELIVERED_VISIBLE] if key == "entregado" else items,
             "extra": extra,
         })
@@ -537,6 +548,7 @@ def map_points(restaurant_names, totals):
             sales, count = totals.get(name, (0.0, 0))
             lat, lng = QUITO_COORDS[name]
             points.append({
+                "icon": restaurant_icon(name),
                 "name": name, "address": restaurant["address"], "lat": lat, "lng": lng,
                 "orders": count, "sales": round(sales, 2),
             })
@@ -600,6 +612,23 @@ def exportar_csv():
     )
 
 
+def public_url():
+    return (os.getenv("PUBLIC_URL") or request.url_root).rstrip("/")
+
+
+@app.get("/qr.svg")
+def qr_code():
+    image = qrcode.make(
+        public_url() + "/", image_factory=qrcode.image.svg.SvgPathImage, box_size=10, border=2,
+    )
+    buffer = io.BytesIO()
+    image.save(buffer)
+    return Response(
+        buffer.getvalue(), mimetype="image/svg+xml",
+        headers={"Cache-Control": "public, max-age=3600"},
+    )
+
+
 @app.get("/sw.js")
 def service_worker():
     response = app.send_static_file("sw.js")
@@ -644,6 +673,7 @@ def inicio():
     return render_template(
         "index.html",
         columns=columns,
+        public_url=public_url(),
         waiting=waiting,
         cancelled=cancelled,
         map_points=map_points({r["name"] for r in restaurants}, report["restaurant_totals"]),
@@ -763,6 +793,34 @@ QUITO_COORDS = {
     "Cocina de la Abuela": (-0.1745, -78.4790),
     "Pizzería González Suárez": (-0.2062, -78.4872),
 }
+DISH_EMOJI = {
+    "Encebollado": "🍲", "Encebollado mixto": "🍲", "Locro de papas": "🥣", "Yaguarlocro": "🥣",
+    "Seco de pollo": "🍗", "Colada morada": "🥤", "Empanadas de viento": "🥟",
+    "Hornado con mote": "🍖", "Fritada": "🥓", "Llapingachos": "🥔", "Tortillas con caucara": "🫓",
+    "Ceviche de camarón": "🦐", "Ceviche mixto": "🦐", "Arroz marinero": "🍤",
+    "Parrillada para 2": "🥩", "Churrasco": "🥩", "Chorizo con papas": "🌭", "Choclo con queso": "🌽",
+    "Bolón de verde": "🍌", "Caldo de bolas": "🍲", "Humitas": "🌽", "Café pasado": "☕",
+    "Pizza margarita": "🍕", "Pizza pepperoni": "🍕", "Lasaña": "🍝", "Pan de ajo": "🥖",
+}
+RESTAURANT_EMOJI = {
+    "Sabor Quiteño": "🍲", "Hornado del Centro": "🍖", "Cevichería La Carolina": "🦐",
+    "Parrilla Cumbayá": "🥩", "Cocina de la Abuela": "🥘", "Pizzería González Suárez": "🍕",
+}
+
+
+def dish_icon(name):
+    return DISH_EMOJI.get(name, "🍽️")
+
+
+def restaurant_icon(name):
+    return RESTAURANT_EMOJI.get(name, "🍴")
+
+
+@app.context_processor
+def inject_icons():
+    return {"rest_icon": restaurant_icon}
+
+
 QUITO_CUSTOMERS = [
     ("Andrés", "Játiva"), ("María Fernanda", "Cevallos"), ("Santiago", "Proaño"),
     ("Daniela", "Chiriboga"), ("Esteban", "Villacís"), ("Paola", "Andrade"),

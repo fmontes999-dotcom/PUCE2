@@ -7,7 +7,10 @@
     <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='logo.svg') }}">
     <link rel="manifest" href="{{ url_for('manifest') }}">
     <meta name="theme-color" content="#171a28">
-    <script>document.documentElement.dataset.theme = localStorage.getItem("theme") || "light";</script>
+    <script>
+        document.documentElement.dataset.theme = localStorage.getItem("theme") || "light";
+        document.documentElement.classList.add("intro");
+    </script>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
     <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -41,6 +44,10 @@
                     <span class="nav-icon">⌖</span>
                     <span>Mapa</span>
                 </a>
+                <a href="#nosotros">
+                    <span class="nav-icon">✦</span>
+                    <span>Misión y visión</span>
+                </a>
             </nav>
             <form class="sidebar-user" action="{{ url_for('logout') }}" method="post">
                 <span class="avatar">{{ session.email[0:1]|upper if session.email else 'U' }}</span>
@@ -61,12 +68,20 @@
                 </div>
                 <div class="topbar-actions">
                     <a class="icon-button bell" id="bell" href="#notificaciones" title="Notificaciones">♧{% if unread %}<span class="badge">{{ unread }}</span>{% endif %}</a>
+                    <button type="button" class="icon-button" id="qr-open" title="Abrir en el celular (código QR)" aria-label="Abrir en el celular">▦</button>
                     <button type="button" class="icon-button" id="theme-toggle" title="Cambiar tema claro/oscuro" aria-label="Cambiar tema">◐</button>
                 </div>
             </header>
 
             <div class="dashboard-content">
                 <section class="welcome">
+                    <div class="floaters" aria-hidden="true">
+                        <span style="--d: 0s; --x: 8%">🍕</span>
+                        <span style="--d: .8s; --x: 28%">🦐</span>
+                        <span style="--d: 1.6s; --x: 48%">🍲</span>
+                        <span style="--d: .4s; --x: 66%">🥟</span>
+                        <span style="--d: 1.2s; --x: 84%">🛵</span>
+                    </div>
                     <p>Panel de hoy</p>
                     <h1>Smart Order</h1>
                     <div class="welcome-meta">
@@ -113,7 +128,7 @@
                 {% macro rank(items) %}
                 <ul class="rank">
                     {% for item in items %}
-                    <li data-tip="{{ item.tip }}" tabindex="0">
+                    <li data-tip="{{ item.tip }}" tabindex="0" style="--n: {{ loop.index0 }}">
                         <span class="rank-name">{{ item.label }}</span>
                         <span class="rank-track">
                             <span class="rank-bar" style="width: {{ item.pct }}%"></span>
@@ -158,7 +173,7 @@
                                     <i class="grid-line" style="bottom: 100%"></i>
                                     {% if report.half %}<i class="grid-line" style="bottom: 50%"></i>{% endif %}
                                     {% for hour in report.hours %}
-                                    <div class="col" data-tip="{{ hour.count }} {{ 'pedido' if hour.count == 1 else 'pedidos' }} a las {{ hour.label }}" tabindex="0">
+                                    <div class="col" data-tip="{{ hour.count }} {{ 'pedido' if hour.count == 1 else 'pedidos' }} a las {{ hour.label }}" tabindex="0" style="--n: {{ loop.index0 }}">
                                         <span class="col-track">
                                             {% if hour.count %}<span class="col-bar" style="height: {{ hour.pct }}%"></span>{% endif %}
                                         </span>
@@ -239,9 +254,14 @@
                             <span class="chip chip-{{ c.platform|lower|replace(' ', '') }}">{{ c.platform }}</span>
                             <span class="timer" data-timer>—</span>
                         </div>
-                        <strong>{{ c.who }}</strong>
-                        {% if c.dishes %}<small class="dishes">{{ c.dishes }}</small>{% endif %}
-                        {% if c.restaurant %}<small class="where">⌖ {{ c.restaurant }}</small>{% endif %}
+                        <div class="kcard-main">
+                            <span class="food-bubble" aria-hidden="true">{{ c.icons }}</span>
+                            <div class="kcard-text">
+                                <strong>{{ c.who }}</strong>
+                                {% if c.dishes %}<small class="dishes">{{ c.dishes }}</small>{% endif %}
+                                {% if c.restaurant %}<small class="where">{{ rest_icon(c.restaurant) }} {{ c.restaurant }}</small>{% endif %}
+                            </div>
+                        </div>
                         <div class="kcard-foot">
                             <b>${{ "%.2f"|format(c.total) }}</b>
                             <span class="kcard-actions">
@@ -270,7 +290,7 @@
                         <div class="kanban">
                             {% for col in columns %}
                             <div class="kcol" data-status="{{ col.key }}">
-                                <header><strong>{{ col.label }}</strong><span class="count">{{ col.count }}</span></header>
+                                <header><strong>{{ col.icon }} {{ col.label }}</strong><span class="count">{{ col.count }}</span></header>
                                 <div class="kcol-body">
                                     {% for c in col.cards %}{{ kcard(c) }}{% else %}<p class="kempty">Sin pedidos</p>{% endfor %}
                                     {% if col.extra %}<p class="kmore">+{{ col.extra }} entregados más (están en el CSV)</p>{% endif %}
@@ -342,7 +362,7 @@
                         </form>
                         {% for restaurant in restaurants %}
                         <div class="restaurant-row">
-                            <strong>{{ restaurant.name }}</strong>
+                            <strong>{{ rest_icon(restaurant.name) }} {{ restaurant.name }}</strong>
                             <small>{{ restaurant.address or 'Sin dirección' }}</small>
                         </div>
                         {% else %}
@@ -389,6 +409,48 @@
                     {% endif %}
                 </section>
 
+                <section class="about" id="nosotros">
+                    <div class="section-head">
+                        <div>
+                            <p>Quiénes somos</p>
+                            <h2>Misión y visión</h2>
+                        </div>
+                    </div>
+                    <div class="about-grid">
+                        <article class="about-card">
+                            <span class="about-icon">🎯</span>
+                            <h3>Misión</h3>
+                            <p>Ayudar a los restaurantes de Quito a recibir, ordenar y entregar los pedidos de todas las plataformas de delivery desde un solo lugar, con menos errores y más tiempo para cocinar.</p>
+                        </article>
+                        <article class="about-card">
+                            <span class="about-icon">🔭</span>
+                            <h3>Visión</h3>
+                            <p>Ser la herramienta de referencia de los restaurantes de Ecuador y la región, donde la inteligencia artificial anticipa la demanda y cada pedido llega a tiempo.</p>
+                        </article>
+                        <article class="about-card qr-card">
+                            <span class="about-icon">📱</span>
+                            <h3>Llévalo en tu celular</h3>
+                            <p>Escanea el código con la cámara de tu teléfono.</p>
+                            <img class="qr" src="{{ url_for('qr_code') }}" alt="Código QR para abrir Smart Order en el celular" width="168" height="168" loading="lazy">
+                            <small class="qr-url">{{ public_url }}</small>
+                            <button class="button outline compact" type="button" data-copy="{{ public_url }}">Copiar enlace</button>
+                        </article>
+                    </div>
+
+                    <div class="values-grid">
+                        <article><span>🤝</span><div><strong>Simplicidad</strong><small>Un solo panel en lugar de tres tabletas.</small></div></article>
+                        <article><span>📊</span><div><strong>Datos que sirven</strong><small>Horas pico, platos estrella y ventas por local.</small></div></article>
+                        <article><span>🏔️</span><div><strong>Hecho en Quito</strong><small>Pensado para la cocina y el delivery de la ciudad.</small></div></article>
+                    </div>
+
+                    <h3 class="how-title">Cómo funciona</h3>
+                    <ol class="steps">
+                        <li><b>1</b><div><strong>Conecta</strong><small>Vincula Rappi, PedidosYa y Uber Eats (en el prototipo, simulados).</small></div></li>
+                        <li><b>2</b><div><strong>Recibe</strong><small>Todos los pedidos llegan a un tablero, con aviso y sonido.</small></div></li>
+                        <li><b>3</b><div><strong>Decide</strong><small>Los reportes muestran qué preparar y cuándo.</small></div></li>
+                    </ol>
+                </section>
+
                 <section class="roadmap" id="hoja-de-ruta">
                     <div class="section-head">
                         <div>
@@ -432,5 +494,15 @@
             </div>
         </main>
     </div>
+
+    <dialog id="qr-dialog" class="qr-dialog">
+        <form method="dialog">
+            <h3>Abre Smart Order en tu celular</h3>
+            <p>Escanea este código con la cámara de tu teléfono.</p>
+            <img class="qr" src="{{ url_for('qr_code') }}" alt="Código QR para abrir Smart Order" width="240" height="240">
+            <small class="qr-url">{{ public_url }}</small>
+            <button class="button orange compact" type="submit">Cerrar</button>
+        </form>
+    </dialog>
 </body>
 </html>
