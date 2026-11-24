@@ -319,6 +319,8 @@ document.querySelectorAll('a[href^="#"]').forEach((link) => {
 
     async function updateDeliveries() {
         if (!map || !window.L) return;
+        // Solo se consulta si hay pedidos en camino (o había y hay que limpiarlos).
+        if (!$(".kcol[data-status='encamino'] .kcard") && !couriers.length) return;
         let data;
         try {
             const res = await fetch("/api/entregas", { credentials: "same-origin" });
@@ -365,7 +367,7 @@ document.querySelectorAll('a[href^="#"]').forEach((link) => {
     updateTimers();
     applyFilters();
     setInterval(updateTimers, 30000);
-    setInterval(refresh, 5000);
+    setInterval(refresh, 8000);
 })();
 
 /* ===== Animaciones de entrada, QR y copiar enlace ===== */

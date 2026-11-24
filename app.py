@@ -9,7 +9,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 import qrcode
 import qrcode.image.svg
-from flask import Flask, Response, flash, redirect, render_template, request, session, url_for
+from flask import Flask, Response, flash, g, redirect, render_template, request, session, url_for
 from supabase import Client, create_client
 from werkzeug.middleware.proxy_fix import ProxyFix
 
@@ -27,13 +27,31 @@ if supabase_url and supabase_key:
 
 
 def get_supabase_for_session():
+    """Cliente de Supabase autenticado, creado una sola vez por petición.
+
+    Crear el cliente y validar la sesión cuesta llamadas de red; hacerlo en cada
+    consulta volvía lentas las páginas (y causaba errores 502 por tiempo agotado).
+    """
     if not supabase or not session.get("supabase_access_token"):
         return None
-    client = create_client(supabase_url, supabase_key)
-    client.auth.set_session(
-        session["supabase_access_token"],
-        session.get("supabase_refresh_token", ""),
-    )
+    if "sb_client" in g:
+        return g.sb_client
+    client = None
+    try:
+        client = create_client(supabase_url, supabase_key)
+        client.auth.set_session(
+            session["supabase_access_token"],
+            session.get("supabase_refresh_token", ""),
+        )
+        current = client.auth.get_session()
+        if current and current.access_token != session["supabase_access_token"]:
+            # El token venció y se renovó: se guarda para no renovarlo en cada petición.
+            session["supabase_access_token"] = current.access_token
+            session["supabase_refresh_token"] = current.refresh_token
+    except Exception as error:
+        app.logger.warning("No se pudo restaurar la sesión de Supabase: %r", error)
+        client = None
+    g.sb_client = client
     return client
 
 
@@ -761,13 +779,12 @@ def preparar_demo():
     if not session.get("user_id"):
         return redirect(url_for("login_page"))
     existing = {r["name"] for r in get_restaurants()}
-    for restaurant in QUITO_DEMO:
-        if restaurant["name"] not in existing:
-            add_restaurant(restaurant["name"], restaurant["address"])
+    add_restaurants_bulk([
+        (restaurant["name"], restaurant["address"])
+        for restaurant in QUITO_DEMO if restaurant["name"] not in existing
+    ])
     connected = get_connections()
-    for platform in PLATFORMS:
-        if platform not in connected:
-            set_connection(platform, True)
+    set_connections_bulk([platform for platform in PLATFORMS if platform not in connected])
     if len(get_orders()) < 10:
         add_orders_bulk(demo_history_rows())
     add_alert("Demo lista", "Restaurantes de Quito cargados, plataformas conectadas y un día de pedidos de ejemplo.")
@@ -1225,6 +1242,52 @@ def demo_history_rows():
     return rows
 
 
+def add_restaurants_bulk(rows):
+    """rows: lista de (nombre, dirección). Una sola consulta en vez de una por restaurante."""
+    if not rows:
+        return
+    user_id = session["user_id"]
+    client = get_supabase_for_session()
+    if client:
+        try:
+            client.table("restaurants").insert(
+                [{"user_id": user_id, "name": name, "address": address} for name, address in rows]
+            ).execute()
+            return
+        except Exception:
+            pass
+    now = datetime.utcnow().isoformat()
+    with get_db() as connection:
+        connection.executemany(
+            "INSERT INTO restaurants (user_id, name, address, created_at) VALUES (?, ?, ?, ?)",
+            [(user_id, name, address, now) for name, address in rows],
+        )
+        connection.commit()
+
+
+def set_connections_bulk(platforms):
+    if not platforms:
+        return
+    user_id = session["user_id"]
+    client = get_supabase_for_session()
+    if client:
+        try:
+            client.table("connections").upsert(
+                [{"user_id": user_id, "platform": platform} for platform in platforms],
+                on_conflict="user_id,platform",
+            ).execute()
+            return
+        except Exception:
+            pass
+    now = datetime.utcnow().isoformat()
+    with get_db() as connection:
+        connection.executemany(
+            "INSERT OR IGNORE INTO connections (user_id, platform, created_at) VALUES (?, ?, ?)",
+            [(user_id, platform, now) for platform in platforms],
+        )
+        connection.commit()
+
+
 def add_orders_bulk(rows):
     user_id = session["user_id"]
     client = get_supabase_for_session()
@@ -1269,11 +1332,12 @@ def cargar_quito_demo():
     if not session.get("user_id"):
         return redirect(url_for("login_page"))
     existing = {r["name"] for r in get_restaurants()}
-    added = 0
-    for restaurant in QUITO_DEMO:
-        if restaurant["name"] not in existing:
-            add_restaurant(restaurant["name"], restaurant["address"])
-            added += 1
+    missing = [
+        (restaurant["name"], restaurant["address"])
+        for restaurant in QUITO_DEMO if restaurant["name"] not in existing
+    ]
+    add_restaurants_bulk(missing)
+    added = len(missing)
     if added:
         add_alert("Restaurantes de Quito cargados", f"Se agregaron {added} restaurantes de demostración.")
     return redirect(url_for("inicio") + "#restaurantes")
