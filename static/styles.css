@@ -1131,7 +1131,13 @@ html[data-theme="dark"] .about-card:hover { box-shadow: 0 10px 26px rgba(0,0,0,.
 }
 
 /* ---------- Tablero de 5 columnas, repartidores ---------- */
-.kanban { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.kanban {
+    grid-template-columns: repeat(5, minmax(215px, 1fr));
+    overflow-x: auto;
+    padding-bottom: 10px;
+    scroll-snap-type: x proximity;
+}
+.kcol { scroll-snap-align: start; }
 .kcard small.courier { color: #2a78d6; font-weight: 700; }
 .courier-pin { font-size: 22px; line-height: 28px; text-align: center; background: none; border: 0; filter: drop-shadow(0 2px 3px rgba(0,0,0,.35)); }
 .welcome-actions { flex-wrap: wrap; }
@@ -1242,15 +1248,11 @@ html[data-theme="dark"] .about-card:hover { box-shadow: 0 10px 26px rgba(0,0,0,.
 .l-final a { text-decoration: none; color: white; }
 .l-footer { padding: 22px; text-align: center; background: #12141f; color: #8e93a6; font: 13px Arial, sans-serif; }
 
-@media (max-width: 1300px) {
-    .kanban { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-}
 @media (max-width: 1100px) {
-    .kanban { grid-template-columns: 1fr 1fr; }
     .menu-grid { grid-template-columns: 1fr 1fr; }
 }
 @media (max-width: 760px) {
-    .kanban, .menu-grid, .assistant-grid, .l-grid, .l-split { grid-template-columns: 1fr; }
+    .menu-grid, .assistant-grid, .l-grid, .l-split { grid-template-columns: 1fr; }
     .l-nav nav a:not(.button) { display: none; }
     .l-mobile { flex-direction: column; text-align: center; }
     .l-floaters span { font-size: 28px; }
@@ -1269,4 +1271,27 @@ html[data-theme="dark"] .dish-name { color: #e5e4de; }
 html[data-theme="dark"] .kcard small.courier { color: #6da7ec; }
 @media print {
     .assistant, .menu-section { display: none !important; }
+}
+
+@media (max-width: 640px) {
+    .kanban { grid-template-columns: 1fr; overflow-x: visible; }
+}
+
+/* ---------- Ajustes para celular ---------- */
+.dashboard-main { min-width: 0; }
+.dashboard-content { min-width: 0; overflow-x: clip; }
+.dashboard-content section, .dashboard-content article { min-width: 0; }
+@media (max-width: 1100px) {
+    .charts-grid, .metrics-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+}
+@media (max-width: 760px) {
+    .charts-grid, .metrics-grid, .assistant-grid, .menu-grid, .about-grid, .values-grid,
+    .steps, .roadmap-grid, .connection-grid, .operations-grid, .l-grid, .l-split {
+        grid-template-columns: minmax(0, 1fr);
+    }
+    .dashboard-content { margin: 0 8px 8px; padding: 40px 14px 50px; }
+    .welcome h1 { font-size: 44px; }
+    .section-head { flex-wrap: wrap; gap: 10px; }
+    .report-actions { flex-wrap: wrap; }
+    .toolbar > * { flex: 1 1 140px; }
 }
