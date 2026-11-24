@@ -12,6 +12,7 @@ Panel unificado de pedidos de delivery para restaurantes de Quito. Reúne en un 
 - **En vivo, sin recargar:** aviso con sonido, tiempo transcurrido por pedido y alerta en rojo a los 15 minutos.
 - **Simulación en vivo:** entra un pedido cada 15 segundos y los pedidos avanzan solos.
 - **Reportes:** ventas por plataforma, pedidos por hora, platos más pedidos y ventas por restaurante.
+- **Pronóstico de demanda:** un modelo estadístico que aprende de los pedidos de cada usuario y predice las próximas 6 horas de atención (ver más abajo).
 - **Sugerencias del asistente:** reglas simples sobre los datos (no es IA generativa).
 - **Plato agotado:** el pedido queda "esperando al cliente" y el plato se marca agotado en el menú.
 - **Menú:** disponibilidad de platos por restaurante.
@@ -28,6 +29,20 @@ Panel unificado de pedidos de delivery para restaurantes de Quito. Reúne en un 
 4. Prueba **Plato agotado** → **Cliente aceptó**.
 5. Mira el mapa, cambia al modo oscuro y descarga el CSV.
 6. **↺ Reiniciar demo** borra los datos de tu cuenta para empezar de cero.
+
+## Modelo de pronóstico (gratis y escalable)
+
+`forecast_demand()` en [`app.py`](app.py) aprende de tu historial y predice cuántos pedidos esperar en cada una de las próximas horas de atención:
+
+1. **Aprende el patrón de cada hora** del día con un promedio ponderado de los últimos 14 días (los días recientes pesan más). Separa días de entre semana y fines de semana cuando hay datos suficientes.
+2. **Se ajusta al día de hoy** comparando las últimas 3 horas reales con lo esperado (limitado entre −30 % y +50 %).
+3. **Descarta el día más antiguo si está incompleto** (el historial suele empezar a media jornada).
+4. **Se evalúa a sí mismo:** predice los últimos días usando solo lo anterior a cada uno y muestra el error medio junto al de un método ingenuo ("lo mismo que ayer").
+5. Con la tasa de unidades por pedido estima cuánto preparar del plato más pedido.
+
+**Gratis:** Python puro, sin claves ni servicios externos. **Escalable:** una pasada O(n) sobre los pedidos y solo mira los últimos días (50 000 pedidos se procesan en menos de 0,1 s); si el volumen crece, el mismo cálculo puede moverse a una tarea nocturna o a una consulta agregada en SQL sin cambiar el modelo.
+
+**Límites honestos:** es un modelo estadístico sencillo, no aprendizaje profundo. Necesita al menos 2 días de historial y, con los datos de demostración (ruido aleatorio sobre un patrón fijo), su ventaja sobre el método ingenuo es modesta. Con pedidos reales mejorará a medida que acumule semanas de datos.
 
 ## Tecnología
 

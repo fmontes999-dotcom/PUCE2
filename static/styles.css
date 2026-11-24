@@ -1295,3 +1295,28 @@ html[data-theme="dark"] .kcard small.courier { color: #6da7ec; }
     .report-actions { flex-wrap: wrap; }
     .toolbar > * { flex: 1 1 140px; }
 }
+
+/* ---------- Pronóstico de demanda ---------- */
+.col-plot { grid-template-columns: repeat(var(--cols, 12), 1fr); }
+.col-bar.forecast { background: #eb6834; }
+.charts-grid .forecast-card { grid-column: 1 / -1; }
+.forecast-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+.ai-chip {
+    padding: 5px 12px;
+    border: 1px solid #f3c7b6;
+    border-radius: 999px;
+    background: #fff1ea;
+    color: #a8390f;
+    font: 700 12px Arial, sans-serif;
+}
+.forecast-body { display: grid; grid-template-columns: 1.1fr 1fr; gap: 32px; align-items: center; }
+.forecast-big { margin: 0 0 12px; font: 700 44px Georgia, serif; }
+.forecast-big span { display: block; margin-top: 2px; color: #8a8d99; font: 14px Arial, sans-serif; }
+.forecast-text ul { list-style: none; margin: 0 0 14px; padding: 0; display: grid; gap: 8px; font: 14px Arial, sans-serif; }
+.forecast-note { display: block; color: #8a8d99; font: 12px/1.55 Arial, sans-serif; }
+html[data-theme="dark"] .ai-chip { background: #2a1d17; border-color: #6a3b28; color: #ffb597; }
+html[data-theme="dark"] .col-bar.forecast { background: #d95926; }
+html[data-theme="dark"] .forecast-big { color: #f0efec; }
+@media (max-width: 900px) {
+    .forecast-body { grid-template-columns: minmax(0, 1fr); }
+}

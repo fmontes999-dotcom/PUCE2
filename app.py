@@ -655,12 +655,18 @@ def dish_prices():
     return {dish: price for restaurant in QUITO_DEMO for dish, price in restaurant["menu"]}
 
 
-def build_insights(report, orders):
+def build_insights(report, orders, forecast=None):
     """Sugerencias basadas en reglas sobre los datos del usuario (no es IA generativa)."""
     if not report["orders"]:
         return [{"icon": "💡", "title": "Aún no hay datos",
-                 "text": "Pulsa “Preparar demo” para cargar restaurantes, plataformas y un día de pedidos."}]
+                 "text": "Pulsa “Preparar demo” para cargar restaurantes, plataformas y varios días de pedidos."}]
     tips = []
+    if forecast and forecast.get("ready"):
+        extra = f" Prepara unas {forecast['dish']['units']} unidades de {forecast['dish']['name']}." if forecast["dish"] else ""
+        when = "en las primeras 3 horas de mañana" if forecast["tomorrow"] else "en las próximas 3 horas de atención"
+        tips.append({"icon": "🔮", "title": f"Pronóstico: ≈{forecast['total3']:.0f} pedidos {when}",
+                     "text": f"El pico será a las {forecast['peak']['label']}{forecast['peak']['day']} "
+                             f"(≈{forecast['peak']['value']:.0f}).{extra}"})
     if report["peak"]:
         top = max(report["hours"], key=lambda hour: hour["count"])
         tips.append({"icon": "⏰", "title": f"Tu hora pico es a las {top['label']}",
@@ -688,6 +694,143 @@ def build_insights(report, orders):
         tips.append({"icon": "🍱", "title": "Ticket promedio bajo",
                      "text": f"Está en ${report['avg']:.2f}. Prueba combos o bebidas para subirlo."})
     return tips[:4]
+
+
+# ---------------------------------------------------------------------------
+# Pronóstico de demanda: modelo estadístico que aprende de los pedidos de cada usuario.
+# - Gratis: Python puro, sin servicios externos ni claves.
+# - Escalable: una pasada O(n) y solo mira los últimos días (memoria acotada); sirve igual
+#   con 100 pedidos o con 100 000, y puede moverse a una tarea nocturna sin cambiar el modelo.
+# ---------------------------------------------------------------------------
+FORECAST_HOURS = 6
+FORECAST_MEMORY_DAYS = 14   # solo se aprende de este tramo de historial
+FORECAST_DECAY = 0.85       # cada día pesa 15 % menos que el siguiente: aprende más de lo reciente
+OPEN_HOURS = range(8, 23)
+
+
+def _hour_counts(orders):
+    counts = {}
+    for order in orders:
+        created = _parse_created(order.get("created_at"))
+        if created:
+            local = created + QUITO_UTC_OFFSET
+            key = (local.date(), local.hour)
+            counts[key] = counts.get(key, 0) + 1
+    return counts
+
+
+def _hourly_profile(counts, earlier_days, hour, as_of, target=None):
+    """Promedio ponderado (más peso a los días recientes) de pedidos en esa hora del día.
+
+    Si se indica el día objetivo, aprende solo de días del mismo tipo (entre semana o fin de
+    semana) cuando hay al menos 2; si no, usa todos.
+    """
+    pool = earlier_days
+    if target is not None:
+        same = [d for d in earlier_days if (d.weekday() >= 5) == (target.weekday() >= 5)]
+        if len(same) >= 2:
+            pool = same
+    total = weight_sum = 0.0
+    for day in pool:
+        age = (as_of - day).days
+        if 1 <= age <= FORECAST_MEMORY_DAYS:
+            weight = FORECAST_DECAY ** (age - 1)
+            total += weight * counts.get((day, hour), 0)
+            weight_sum += weight
+    return total / weight_sum if weight_sum else None
+
+
+def forecast_demand(orders):
+    now = datetime.utcnow() + QUITO_UTC_OFFSET
+    counts = _hour_counts(orders)
+    today = now.date()
+    first_hour = {}
+    for day, hour in counts:
+        first_hour[day] = min(hour, first_hour.get(day, 24))
+    past_days = sorted(day for day in first_hour if day < today)
+    # El día más antiguo suele estar incompleto (el historial empieza a mitad de jornada):
+    # sus horas sin datos parecerían "cero pedidos" y sesgarían el aprendizaje.
+    if len(past_days) >= 3:
+        others = sorted(first_hour[day] for day in past_days[1:])
+        if first_hour[past_days[0]] > others[len(others) // 2] + 1:
+            past_days = past_days[1:]
+    if len(past_days) < 2:
+        return {"ready": False, "days": len(past_days),
+                "message": "Se necesitan al menos 2 días de historial para aprender el patrón de cada hora."}
+
+    # Ajuste de nivel: ¿hoy va más rápido o más lento que lo aprendido? (últimas 3 horas)
+    recent = [now - timedelta(hours=k) for k in (1, 2, 3)]
+    actual = sum(counts.get((t.date(), t.hour), 0) for t in recent)
+    expected = sum(_hourly_profile(counts, past_days, t.hour, today, t.date()) or 0 for t in recent)
+    factor = min(1.5, max(0.7, 1 + 0.5 * ((actual + 1) / (expected + 1) - 1)))
+
+    # Se pronostican las próximas horas de atención (las que históricamente tienen pedidos),
+    # aunque haya que pasar a mañana si ahora el local está cerrado.
+    points = []
+    for k in range(1, 37):
+        if len(points) == FORECAST_HOURS:
+            break
+        t = now + timedelta(hours=k)
+        base = _hourly_profile(counts, past_days, t.hour, today, t.date()) or 0.0
+        if base <= 0:
+            continue
+        level = factor if t.date() == today else 1.0
+        points.append({
+            "label": f"{t.hour}h", "value": round(base * level, 1),
+            "day": "" if t.date() == today else " (mañana)",
+        })
+    if not points:
+        return {"ready": False, "days": len(past_days),
+                "message": "Todavía no hay horas con pedidos en el historial para pronosticar."}
+    tomorrow = points[0]["day"] != ""
+    top = max(p["value"] for p in points)
+    for p in points:
+        p["pct"] = round(100 * p["value"] / top, 1) if top else 0
+        p["tip"] = f'≈ {p["value"]:.1f} pedidos a las {p["label"]}{p["day"]}'
+    total3 = round(sum(p["value"] for p in points[:3]), 1)
+    peak = max(points, key=lambda p: p["value"])
+
+    # Prueba hacia atrás: predecir los últimos días usando solo lo anterior a cada día.
+    err_model = err_naive = samples = 0
+    for day in past_days[-3:]:
+        earlier = [d for d in past_days if d < day]
+        if len(earlier) < 2:
+            continue
+        for hour in OPEN_HOURS:
+            predicted = _hourly_profile(counts, earlier, hour, day, day)
+            if predicted is None:
+                continue
+            real = counts.get((day, hour), 0)
+            err_model += abs(predicted - real)
+            err_naive += abs(counts.get((earlier[-1], hour), 0) - real)
+            samples += 1
+
+    # Platos: unidades por pedido aprendidas del historial × pedidos esperados.
+    units = {}
+    for order in orders:
+        _, _, items = str(order.get("customer", "")).partition(" — ")
+        for part in items.split(", ") if items else []:
+            match = DISH_RE.match(part)
+            if match:
+                units[match.group(2)] = units.get(match.group(2), 0) + int(match.group(1))
+    dish = None
+    if units and orders:
+        name, qty = max(units.items(), key=lambda item: item[1])
+        dish = {"name": name, "icon": dish_icon(name), "units": max(1, round(qty / len(orders) * total3))}
+
+    if factor > 1.1:
+        pace = f"Hoy va más movido de lo habitual (+{round((factor - 1) * 100)} %)"
+    elif factor < 0.9:
+        pace = f"Hoy va más tranquilo de lo habitual (−{round((1 - factor) * 100)} %)"
+    else:
+        pace = "Hoy va al ritmo habitual"
+    return {
+        "ready": True, "days": len(past_days), "points": points, "top": top, "total3": total3,
+        "tomorrow": tomorrow,
+        "peak": peak, "dish": dish, "pace": pace,
+        "mae": round(err_model / samples, 2) if samples else None,
+        "naive_mae": round(err_naive / samples, 2) if samples else None,
+    }
 
 
 def menu_view(restaurant_names, off):
@@ -786,7 +929,7 @@ def preparar_demo():
     connected = get_connections()
     set_connections_bulk([platform for platform in PLATFORMS if platform not in connected])
     if len(get_orders()) < 10:
-        add_orders_bulk(demo_history_rows())
+        add_orders_bulk(demo_history_rows() + demo_past_rows())
     add_alert("Demo lista", "Restaurantes de Quito cargados, plataformas conectadas y un día de pedidos de ejemplo.")
     return redirect(url_for("inicio"))
 
@@ -888,11 +1031,13 @@ def inicio():
     restaurants = get_restaurants()
     alerts = get_alerts()
     report = build_report(orders)
+    forecast = forecast_demand(orders)
     columns, waiting, cancelled = build_board(orders)
     return render_template(
         "index.html",
         columns=columns,
-        insights=build_insights(report, orders),
+        insights=build_insights(report, orders, forecast),
+        forecast=forecast,
         menu=menu_view({r["name"] for r in restaurants}, get_unavailable()),
         public_url=public_url(),
         waiting=waiting,
@@ -1214,31 +1359,53 @@ HOURLY_WEIGHT = {8: 1, 9: 1, 10: 2, 11: 3, 12: 6, 13: 7, 14: 4, 15: 1, 16: 1,
                  17: 2, 18: 4, 19: 7, 20: 6, 21: 3, 22: 1}
 
 
+def _demo_order_row(created, status):
+    restaurant = random.choice(QUITO_DEMO)
+    dishes = random.sample(restaurant["menu"], k=random.randint(1, min(3, len(restaurant["menu"]))))
+    lines = [(dish, price, random.randint(1, 2)) for dish, price in dishes]
+    total = round(sum(price * qty for _, price, qty in lines) + DELIVERY_FEE, 2)
+    first, last = random.choice(QUITO_CUSTOMERS)
+    label = PLATFORMS[random.choice(list(PLATFORMS))]["label"]
+    return {
+        "platform": f'{label} · {restaurant["name"]}',
+        "customer": _label(random.randint(1000, 9999), f"{first} {last}",
+                           [(dish, qty) for dish, _, qty in lines]),
+        "total": total,
+        "status": status,
+        "created_at": created.isoformat(),
+    }
+
+
 def demo_history_rows():
+    """Pedidos de las últimas 12 horas (los más recientes siguen en curso)."""
     now_utc = datetime.utcnow()
     rows = []
     for back in range(11, -1, -1):
         slot_utc = (now_utc - timedelta(hours=back)).replace(minute=0, second=0, microsecond=0)
         clock_hour = (slot_utc + QUITO_UTC_OFFSET).hour
-        is_current = back == 0
+        max_minute = now_utc.minute if back == 0 else 59
         for _ in range(HOURLY_WEIGHT.get(clock_hour, 0)):
-            max_minute = now_utc.minute if is_current else 59
             created = slot_utc + timedelta(minutes=random.randint(0, max_minute), seconds=random.randint(0, 59))
-            restaurant = random.choice(QUITO_DEMO)
-            dishes = random.sample(restaurant["menu"], k=random.randint(1, min(3, len(restaurant["menu"]))))
-            lines = [(dish, price, random.randint(1, 2)) for dish, price in dishes]
-            total = round(sum(price * qty for _, price, qty in lines) + DELIVERY_FEE, 2)
-            first, last = random.choice(QUITO_CUSTOMERS)
-            label = PLATFORMS[random.choice(list(PLATFORMS))]["label"]
             recent = (now_utc - created) < timedelta(hours=1)
-            rows.append({
-                "platform": f'{label} · {restaurant["name"]}',
-                "customer": _label(random.randint(1000, 9999), f"{first} {last}",
-                                   [(dish, qty) for dish, _, qty in lines]),
-                "total": total,
-                "status": random.choice(["nuevo", "preparando", "listo", "encamino"]) if recent else "entregado",
-                "created_at": created.isoformat(),
-            })
+            status = random.choice(["nuevo", "preparando", "listo", "encamino"]) if recent else "entregado"
+            rows.append(_demo_order_row(created, status))
+    return rows
+
+
+def demo_past_rows(days=7):
+    """Pedidos entregados de los días anteriores: el modelo de pronóstico aprende de ellos."""
+    now_utc = datetime.utcnow()
+    rows = []
+    for back in range(12, days * 24):
+        slot_utc = (now_utc - timedelta(hours=back)).replace(minute=0, second=0, microsecond=0)
+        local = slot_utc + QUITO_UTC_OFFSET
+        weight = HOURLY_WEIGHT.get(local.hour, 0)
+        if not weight:
+            continue
+        factor = 1.25 if local.weekday() >= 5 else 1.0
+        for _ in range(max(0, round(weight * factor * random.uniform(0.75, 1.25)))):
+            created = slot_utc + timedelta(minutes=random.randint(0, 59), seconds=random.randint(0, 59))
+            rows.append(_demo_order_row(created, "entregado"))
     return rows
 
 
@@ -1309,10 +1476,10 @@ def add_orders_bulk(rows):
 def historial_demo():
     if not session.get("user_id"):
         return redirect(url_for("login_page"))
-    rows = demo_history_rows()
+    rows = demo_history_rows() + demo_past_rows()
     if rows:
         add_orders_bulk(rows)
-        add_alert("Historial de ejemplo cargado", f"Se agregaron {len(rows)} pedidos de las últimas 12 horas.")
+        add_alert("Historial de ejemplo cargado", f"Se agregaron {len(rows)} pedidos de los últimos 7 días.")
     return redirect(url_for("inicio") + "#reportes")
 
 

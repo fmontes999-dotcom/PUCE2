@@ -223,6 +223,48 @@
                             <p class="chart-sub">Total vendido, top 5</p>
                             {{ rank(report.restaurants) }}
                         </article>
+
+                        <article class="chart-card forecast-card">
+                            <div class="forecast-head">
+                                <div>
+                                    <h3>🔮 Pronóstico de demanda</h3>
+                                    <p class="chart-sub">{% if forecast.ready and forecast.tomorrow %}Ahora el local está cerrado: así se espera la apertura de mañana{% else %}Pedidos esperados en las próximas 6 horas de atención{% endif %}, según lo que el modelo aprendió de tu historial</p>
+                                </div>
+                                <span class="ai-chip">Aprende de tus datos</span>
+                            </div>
+                            {% if forecast.ready %}
+                            <div class="forecast-body">
+                                <div class="columns" role="img" aria-label="Pronóstico de pedidos por hora. Pico previsto a las {{ forecast.peak.label }}.">
+                                    <div class="col-axis" aria-hidden="true">
+                                        <span style="bottom: 100%">{{ forecast.top }}</span>
+                                        <span style="bottom: 0">0</span>
+                                    </div>
+                                    <div class="col-plot" style="--cols: 6">
+                                        <i class="grid-line" style="bottom: 100%"></i>
+                                        {% for point in forecast.points %}
+                                        <div class="col" data-tip="{{ point.tip }}" tabindex="0" style="--n: {{ loop.index0 }}">
+                                            <span class="col-track">
+                                                {% if point.value %}<span class="col-bar forecast" style="height: {{ point.pct }}%"></span>{% endif %}
+                                            </span>
+                                            <small>{{ point.label }}{% if point.day %}<br>mañana{% endif %}</small>
+                                        </div>
+                                        {% endfor %}
+                                    </div>
+                                </div>
+                                <div class="forecast-text">
+                                    <p class="forecast-big">≈ {{ '%.0f'|format(forecast.total3) }}<span>pedidos esperados en las {{ 'primeras 3 horas de mañana' if forecast.tomorrow else 'próximas 3 horas de atención' }}</span></p>
+                                    <ul>
+                                        <li>⏰ Pico previsto a las <b>{{ forecast.peak.label }}{{ forecast.peak.day }}</b> (≈ {{ '%.0f'|format(forecast.peak.value) }} pedidos)</li>
+                                        {% if forecast.dish %}<li>{{ forecast.dish.icon }} Prepara unas <b>{{ forecast.dish.units }}</b> unidades de {{ forecast.dish.name }}</li>{% endif %}
+                                        <li>📈 {{ forecast.pace }}</li>
+                                    </ul>
+                                    <small class="forecast-note">Cómo funciona: aprende el patrón de cada hora de los últimos {{ forecast.days }} días (pesa más los recientes) y lo ajusta con las últimas 3 horas.{% if forecast.mae is not none %} En una prueba con días pasados, el error medio fue de {{ forecast.mae }} pedidos por hora (método ingenuo: {{ forecast.naive_mae }}).{% endif %} Es gratis y no usa servicios externos.</small>
+                                </div>
+                            </div>
+                            {% else %}
+                            <p class="map-empty">{{ forecast.message }} Pulsa “Preparar demo” para cargar 7 días de historial.</p>
+                            {% endif %}
+                        </article>
                     </div>
                     {% else %}
                     <div class="empty-state">
