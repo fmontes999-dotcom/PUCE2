@@ -40,6 +40,10 @@
                     <span class="nav-icon">◫</span>
                     <span>Reportes</span>
                 </a>
+                <a href="#menu">
+                    <span class="nav-icon">⌸</span>
+                    <span>Menú</span>
+                </a>
                 <a href="#mapa">
                     <span class="nav-icon">⌖</span>
                     <span>Mapa</span>
@@ -91,6 +95,12 @@
                         <span>canales de delivery recibiendo pedidos</span>
                     </div>
                     <div class="welcome-actions">
+                        <form action="{{ url_for('preparar_demo') }}" method="post">
+                            <button class="button orange" type="submit" title="Carga restaurantes de Quito, conecta las plataformas y llena el día con pedidos">✨ Preparar demo</button>
+                        </form>
+                        <form action="{{ url_for('reiniciar_demo') }}" method="post" onsubmit="return confirm('¿Borrar los pedidos, restaurantes y conexiones de tu cuenta para empezar la demo desde cero?')">
+                            <button class="button outline" type="submit">↺ Reiniciar demo</button>
+                        </form>
                         <a class="button outline" href="#conexiones">
                             <span class="button-icon">⌁</span>
                             Conexiones
@@ -123,6 +133,24 @@
                         <strong>{{ metrics.connections }} / 3</strong>
                         <small>Rappi · PedidosYa · Uber Eats</small>
                     </article>
+                </section>
+
+                <section class="assistant" id="asistente">
+                    <div class="assistant-head">
+                        <span class="assistant-icon">✦</span>
+                        <div>
+                            <strong>Sugerencias del asistente</strong>
+                            <small>Calculadas con tus datos (reglas simples, no IA generativa)</small>
+                        </div>
+                    </div>
+                    <div class="assistant-grid">
+                        {% for tip in insights %}
+                        <article>
+                            <span>{{ tip.icon }}</span>
+                            <div><strong>{{ tip.title }}</strong><small>{{ tip.text }}</small></div>
+                        </article>
+                        {% endfor %}
+                    </div>
                 </section>
 
                 {% macro rank(items) %}
@@ -260,6 +288,7 @@
                                 <strong>{{ c.who }}</strong>
                                 {% if c.dishes %}<small class="dishes">{{ c.dishes }}</small>{% endif %}
                                 {% if c.restaurant %}<small class="where">{{ rest_icon(c.restaurant) }} {{ c.restaurant }}</small>{% endif %}
+                                {% if c.courier %}<small class="courier">{{ c.courier }} · ~{{ c.eta }} min</small>{% endif %}
                             </div>
                         </div>
                         <div class="kcard-foot">
@@ -271,6 +300,7 @@
                                 {% else %}
                                 {% if c.status == 'nuevo' %}<button type="button" class="mini ghost" data-act="{{ url_for('plato_agotado', order_id=c.id) }}" title="Avisar al cliente que un plato se agotó">Plato agotado</button>{% endif %}
                                 {% if c.next %}<button type="button" class="mini" data-act="{{ url_for('actualizar_estado', order_id=c.id) }}" data-status="{{ c.next }}">{{ c.next_label }} →</button>{% endif %}
+                                {% if c.status == 'entregado' %}<a class="mini ghost" href="{{ url_for('factura', order_id=c.id) }}" target="_blank" rel="noopener">🧾 Factura</a>{% endif %}
                                 {% endif %}
                             </span>
                         </div>
@@ -391,6 +421,34 @@
                         <div class="alert-row"><small>No tienes notificaciones nuevas.</small></div>
                         {% endfor %}
                     </article>
+                </section>
+
+                <section class="menu-section" id="menu">
+                    <div class="section-head">
+                        <div>
+                            <p>Disponibilidad</p>
+                            <h2>Menú de tus restaurantes</h2>
+                        </div>
+                    </div>
+                    {% if menu %}
+                    <div class="menu-grid">
+                        {% for restaurant in menu %}
+                        <article class="menu-card">
+                            <h3>{{ restaurant.icon }} {{ restaurant.name }}</h3>
+                            {% for dish in restaurant.dishes %}
+                            <div class="dish-row{{ ' off' if dish.off }}">
+                                <span class="dish-icon">{{ dish.icon }}</span>
+                                <span class="dish-name">{{ dish.name }}<small>${{ "%.2f"|format(dish.price) }}</small></span>
+                                <button type="button" class="mini {{ 'ghost' if not dish.off }}" data-act="{{ url_for('alternar_plato') }}" data-dish="{{ dish.name }}" aria-pressed="{{ 'true' if dish.off else 'false' }}">{{ 'Reponer' if dish.off else 'Agotar' }}</button>
+                            </div>
+                            {% endfor %}
+                        </article>
+                        {% endfor %}
+                    </div>
+                    <p class="map-empty">Un plato agotado deja de salir en los pedidos simulados. También se agota solo cuando pulsas “Plato agotado” en un pedido.</p>
+                    {% else %}
+                    <p class="map-empty">Pulsa “Preparar demo” para cargar los restaurantes de Quito y administrar sus menús.</p>
+                    {% endif %}
                 </section>
 
                 <section class="map-section" id="mapa">

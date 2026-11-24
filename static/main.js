@@ -57,7 +57,8 @@ document.querySelectorAll('a[href^="#"]').forEach((link) => {
 (() => {
     const $ = (sel, root = document) => root.querySelector(sel);
     const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
-    const SWAP = ["#metrics", "#board-wrap", "#reportes", "#notificaciones", "#bell"];
+    const SWAP = ["#metrics", "#asistente", "#board-wrap", "#reportes", "#menu", "#notificaciones", "#bell"];
+    let map = null;
     let dragging = false;
     let dragCard = null;
     let busy = false;
@@ -158,6 +159,7 @@ document.querySelectorAll('a[href^="#"]').forEach((link) => {
             if (res.redirected && res.url.includes("/login")) { location.href = "/login"; return; }
             if (!res.ok) return;
             const doc = new DOMParser().parseFromString(await res.text(), "text/html");
+            if (!$("#board-wrap", doc)) { location.href = "/login"; return; }
             const before = new Set($$("#board-wrap .kcard").map((card) => card.dataset.id));
             SWAP.forEach((sel) => {
                 const current = $(sel);
@@ -174,6 +176,7 @@ document.querySelectorAll('a[href^="#"]').forEach((link) => {
             if (fresh.length) beep();
             updateTimers();
             applyFilters();
+            updateDeliveries();
         } catch (error) {
             // sin conexión: se reintenta en el siguiente ciclo
         } finally {
@@ -187,7 +190,9 @@ document.querySelectorAll('a[href^="#"]').forEach((link) => {
         if (!button) return;
         button.disabled = true;
         try {
-            await post(button.dataset.act, button.dataset.status ? { status: button.dataset.status } : {});
+            const data = button.dataset.status ? { status: button.dataset.status }
+                : button.dataset.dish ? { dish: button.dataset.dish } : {};
+            await post(button.dataset.act, data);
         } finally {
             busy = false;
             await refresh(true);
@@ -243,6 +248,7 @@ document.querySelectorAll('a[href^="#"]').forEach((link) => {
         }
         const platform = connected[Math.floor(Math.random() * connected.length)];
         await post(`/demo/pedido-entrante/${platform}`);
+        await post("/demo/avanzar");
         await refresh(true);
     }
 
@@ -276,7 +282,7 @@ document.querySelectorAll('a[href^="#"]').forEach((link) => {
             return;
         }
         el.innerHTML = "";
-        const map = L.map(el, { scrollWheelZoom: false }).setView([-0.1807, -78.4678], 12);
+        map = L.map(el, { scrollWheelZoom: false }).setView([-0.1807, -78.4678], 12);
         L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
             maxZoom: 19, attribution: "&copy; OpenStreetMap",
         }).addTo(map);
@@ -300,6 +306,58 @@ document.querySelectorAll('a[href^="#"]').forEach((link) => {
         }
     }
     initMap();
+
+    // ----- Repartidores en el mapa -----
+    let deliveryLayer = null;
+    let couriers = [];
+
+    const textNode = (value) => {
+        const span = document.createElement("span");
+        span.textContent = value;
+        return span;
+    };
+
+    async function updateDeliveries() {
+        if (!map || !window.L) return;
+        let data;
+        try {
+            const res = await fetch("/api/entregas", { credentials: "same-origin" });
+            if (!res.ok) return;
+            data = await res.json();
+        } catch (error) {
+            return;
+        }
+        if (!deliveryLayer) deliveryLayer = L.layerGroup().addTo(map);
+        deliveryLayer.clearLayers();
+        couriers = [];
+        data.deliveries.forEach((delivery) => {
+            L.polyline([delivery.from, delivery.to], { color: "#2a78d6", weight: 3, dashArray: "6 8" })
+                .addTo(deliveryLayer);
+            L.circleMarker(delivery.to, {
+                radius: 6, color: "#fff", weight: 2, fillColor: "#2a78d6", fillOpacity: 1,
+            }).bindTooltip(textNode(`Entrega: ${delivery.who}`)).addTo(deliveryLayer);
+            const icon = L.divIcon({ className: "courier-pin", html: "🛵", iconSize: [28, 28] });
+            const marker = L.marker(delivery.from, { icon })
+                .bindTooltip(textNode(`${delivery.courier} · ~${delivery.eta} min`))
+                .addTo(deliveryLayer);
+            couriers.push({ marker, delivery });
+        });
+    }
+
+    function animateCouriers(now) {
+        couriers.forEach(({ marker, delivery }) => {
+            const t = ((now / 1000 + delivery.id * 3) % 30) / 30;
+            marker.setLatLng([
+                delivery.from[0] + (delivery.to[0] - delivery.from[0]) * t,
+                delivery.from[1] + (delivery.to[1] - delivery.from[1]) * t,
+            ]);
+        });
+        requestAnimationFrame(animateCouriers);
+    }
+    if (map) {
+        updateDeliveries();
+        requestAnimationFrame(animateCouriers);
+    }
 
     // ----- Instalación como app -----
     if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});

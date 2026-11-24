@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Smart Order · Todos tus pedidos de delivery en una sola pantalla</title>
+    <meta name="description" content="Panel unificado de pedidos de Rappi, PedidosYa y Uber Eats para restaurantes de Quito.">
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='logo.svg') }}">
+    <link rel="manifest" href="{{ url_for('manifest') }}">
+    <meta name="theme-color" content="#171a28">
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body class="landing">
+    <header class="l-nav">
+        <a class="l-brand" href="{{ url_for('inicio') }}">
+            <img src="{{ url_for('static', filename='logo.svg') }}" alt="" width="36" height="36">
+            <span>Smart Order</span>
+        </a>
+        <nav>
+            <a href="#beneficios">Beneficios</a>
+            <a href="#como">Cómo funciona</a>
+            <a href="#movil">En tu celular</a>
+            <a class="button outline compact" href="{{ url_for('login_page') }}">Iniciar sesión</a>
+        </nav>
+    </header>
+
+    <section class="l-hero">
+        <div class="l-floaters" aria-hidden="true">
+            <span style="--d: 0s; --x: 6%; --y: 14%">🍕</span>
+            <span style="--d: .7s; --x: 88%; --y: 22%">🦐</span>
+            <span style="--d: 1.4s; --x: 14%; --y: 72%">🍲</span>
+            <span style="--d: .3s; --x: 80%; --y: 68%">🥟</span>
+            <span style="--d: 1s; --x: 50%; --y: 6%">🛵</span>
+        </div>
+        <p class="l-eyebrow">Para restaurantes de Quito</p>
+        <h1>Todos tus pedidos de delivery,<br><em>en una sola pantalla.</em></h1>
+        <p class="l-lead">Recibe, ordena y entrega los pedidos de Rappi, PedidosYa y Uber Eats desde un tablero simple, con reportes en vivo y avisos al instante.</p>
+        <div class="l-cta">
+            <a class="button orange" href="{{ url_for('register_page') }}">Crear cuenta gratis <span>→</span></a>
+            <a class="button outline" href="{{ url_for('login_page') }}">Ya tengo cuenta</a>
+        </div>
+        <div class="l-platforms">
+            <span>Compatible con</span>
+            <b class="chip chip-rappi">Rappi</b>
+            <b class="chip chip-pedidosya">PedidosYa</b>
+            <b class="chip chip-ubereats">Uber Eats</b>
+        </div>
+        <p class="l-note">Prototipo académico: las plataformas están simuladas hasta obtener acceso a sus APIs oficiales.</p>
+    </section>
+
+    <section class="l-section" id="beneficios">
+        <h2>Menos caos, más tiempo para cocinar</h2>
+        <div class="l-grid">
+            <article><span>🧾</span><h3>Un solo tablero</h3><p>Los pedidos de todas las plataformas llegan a columnas claras: nuevo, preparando, listo, en camino y entregado.</p></article>
+            <article><span>🔔</span><h3>Avisos en vivo</h3><p>Sonido y aviso cuando entra un pedido, y alerta en rojo cuando alguno lleva más de 15 minutos sin avanzar.</p></article>
+            <article><span>📊</span><h3>Reportes que sirven</h3><p>Ventas por plataforma, horas pico, platos más pedidos y sugerencias para decidir qué preparar.</p></article>
+            <article><span>🍽️</span><h3>Menú al día</h3><p>Marca un plato como agotado y deja de recibir pedidos de ese plato. Avisa al cliente si ya lo pidió.</p></article>
+            <article><span>🛵</span><h3>Repartidores en el mapa</h3><p>Asigna un repartidor y sigue la entrega en el mapa de Quito, con tiempo estimado.</p></article>
+            <article><span>🧾</span><h3>Facturas y exportación</h3><p>Factura de ejemplo por pedido y descarga de todo tu historial en CSV para Excel.</p></article>
+        </div>
+    </section>
+
+    <section class="l-section" id="como">
+        <h2>Cómo funciona</h2>
+        <ol class="steps l-steps">
+            <li><b>1</b><div><strong>Conecta</strong><small>Vincula tus plataformas de delivery una sola vez.</small></div></li>
+            <li><b>2</b><div><strong>Recibe</strong><small>Los pedidos llegan solos al tablero, sin recargar la página.</small></div></li>
+            <li><b>3</b><div><strong>Decide</strong><small>Los reportes muestran qué preparar y cuándo.</small></div></li>
+        </ol>
+    </section>
+
+    <section class="l-section l-split">
+        <article class="about-card">
+            <span class="about-icon">🎯</span>
+            <h3>Misión</h3>
+            <p>Ayudar a los restaurantes de Quito a recibir, ordenar y entregar los pedidos de todas las plataformas de delivery desde un solo lugar, con menos errores y más tiempo para cocinar.</p>
+        </article>
+        <article class="about-card">
+            <span class="about-icon">🔭</span>
+            <h3>Visión</h3>
+            <p>Ser la herramienta de referencia de los restaurantes de Ecuador y la región, donde la inteligencia artificial anticipa la demanda y cada pedido llega a tiempo.</p>
+        </article>
+    </section>
+
+    <section class="l-section l-mobile" id="movil">
+        <div>
+            <h2>Llévalo en tu celular</h2>
+            <p>Escanea el código con la cámara de tu teléfono y, desde el navegador, instala Smart Order como una aplicación.</p>
+            <small class="qr-url">{{ public_url }}</small>
+        </div>
+        <img class="qr" src="{{ url_for('qr_code') }}" alt="Código QR para abrir Smart Order en el celular" width="200" height="200" loading="lazy">
+    </section>
+
+    <section class="l-final">
+        <h2>Pruébalo en 1 minuto</h2>
+        <p>Crea una cuenta y pulsa “Preparar demo” para ver un día completo de pedidos de Quito.</p>
+        <a class="button orange" href="{{ url_for('register_page') }}">Crear cuenta gratis <span>→</span></a>
+    </section>
+
+    <footer class="l-footer">Smart Order · Proyecto académico · Hecho en Quito 🏔️</footer>
+</body>
+</html>

@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Factura {{ number }} · Smart Order</title>
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='logo.svg') }}">
+    <style>
+        body { margin: 0; padding: 24px; background: #eceae3; font-family: Arial, sans-serif; color: #171b2a; }
+        .sheet { max-width: 720px; margin: 0 auto; padding: 36px; border-radius: 12px; background: #fff; box-shadow: 0 10px 30px rgba(0,0,0,.08); }
+        .demo { margin: 0 0 22px; padding: 10px 14px; border: 1px dashed #d9a441; border-radius: 8px; background: #fffaf0; color: #7a6a3a; font-size: 12px; line-height: 1.5; }
+        header { display: flex; justify-content: space-between; gap: 20px; margin-bottom: 24px; }
+        header h1 { margin: 0 0 4px; font-size: 22px; }
+        header small, .meta small { color: #6b6e7b; display: block; line-height: 1.6; }
+        .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; }
+        .brand img { width: 34px; height: 34px; border-radius: 8px; }
+        .box { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 22px; padding: 14px 16px; border: 1px solid #e2dfd5; border-radius: 10px; }
+        .box strong { display: block; margin-bottom: 4px; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: #6b6e7b; }
+        table { width: 100%; border-collapse: collapse; font-size: 14px; }
+        th, td { padding: 10px 6px; border-bottom: 1px solid #ebe8df; text-align: left; }
+        th { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #6b6e7b; }
+        td.num, th.num { text-align: right; }
+        .totals { width: 260px; margin: 18px 0 0 auto; font-size: 14px; }
+        .totals div { display: flex; justify-content: space-between; padding: 5px 0; }
+        .totals .grand { margin-top: 6px; padding-top: 10px; border-top: 2px solid #171b2a; font-size: 18px; font-weight: 800; }
+        .actions { display: flex; justify-content: center; gap: 10px; margin-top: 26px; }
+        button, .back { padding: 11px 18px; border: 0; border-radius: 10px; background: #ef5a2a; color: #fff; font: 700 14px Arial, sans-serif; cursor: pointer; text-decoration: none; }
+        .back { background: #fff; color: #171b2a; border: 1px solid #d8d4c9; }
+        @media print { body { padding: 0; background: #fff; } .sheet { box-shadow: none; } .actions { display: none; } }
+    </style>
+</head>
+<body>
+    <main class="sheet">
+        <p class="demo"><strong>Documento de demostración.</strong> Esta factura es un ejemplo generado por el prototipo Smart Order: el RUC es ficticio y no tiene validez tributaria ni está autorizada por el SRI.</p>
+        <header>
+            <div>
+                <div class="brand"><img src="{{ url_for('static', filename='logo.svg') }}" alt=""> Smart Order</div>
+                <h1>{{ card.restaurant or 'Restaurante' }}</h1>
+                <small>RUC: 1790000000001 (ficticio)<br>{{ address }}</small>
+            </div>
+            <div class="meta">
+                <h1>FACTURA</h1>
+                <small>N.º {{ number }}<br>Fecha: {{ issued }}<br>Canal: {{ card.platform }}<br>Pedido #{{ card.id }}</small>
+            </div>
+        </header>
+        <section class="box">
+            <div><strong>Cliente</strong>{{ card.who }}</div>
+            <div><strong>Forma de pago</strong>Pagado en la plataforma ({{ card.platform }})</div>
+        </section>
+        <table>
+            <thead><tr><th>Descripción</th><th class="num">Cant.</th><th class="num">P. unitario</th><th class="num">Total</th></tr></thead>
+            <tbody>
+                {% for line in lines %}
+                <tr><td>{{ line.name }}</td><td class="num">{{ line.qty }}</td><td class="num">${{ "%.2f"|format(line.price) }}</td><td class="num">${{ "%.2f"|format(line.amount) }}</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <div class="totals">
+            <div><span>Subtotal sin IVA</span><span>${{ "%.2f"|format(base) }}</span></div>
+            <div><span>IVA 15%</span><span>${{ "%.2f"|format(iva) }}</span></div>
+            <div class="grand"><span>Total</span><span>${{ "%.2f"|format(total) }}</span></div>
+        </div>
+        <div class="actions">
+            <a class="back" href="{{ url_for('inicio') }}">← Volver al panel</a>
+            <button type="button" onclick="window.print()">Imprimir / guardar PDF</button>
+        </div>
+    </main>
+</body>
+</html>

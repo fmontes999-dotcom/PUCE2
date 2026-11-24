@@ -74,3 +74,18 @@ create policy "Users manage their own connections"
     on public.connections for all
     using (auth.uid() = user_id)
     with check (auth.uid() = user_id);
+
+-- Platos agotados por usuario
+create table if not exists public.unavailable_dishes (
+    user_id uuid not null references auth.users(id) on delete cascade,
+    dish text not null,
+    primary key (user_id, dish)
+);
+
+alter table public.unavailable_dishes enable row level security;
+
+drop policy if exists "Users manage their own unavailable dishes" on public.unavailable_dishes;
+create policy "Users manage their own unavailable dishes"
+    on public.unavailable_dishes for all
+    using (auth.uid() = user_id)
+    with check (auth.uid() = user_id);

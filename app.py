@@ -90,6 +90,13 @@ def ensure_sqlite():
             )"""
         )
         connection.execute(
+            """CREATE TABLE IF NOT EXISTS unavailable_dishes (
+                user_id TEXT NOT NULL,
+                dish TEXT NOT NULL,
+                PRIMARY KEY (user_id, dish)
+            )"""
+        )
+        connection.execute(
             """CREATE TABLE IF NOT EXISTS connections (
                 user_id TEXT NOT NULL,
                 platform TEXT NOT NULL,
@@ -489,11 +496,15 @@ def build_report(orders):
 
 STATUS_COLUMNS = [
     ("nuevo", "Nuevo", "✨"), ("preparando", "Preparando", "👨‍🍳"),
-    ("listo", "Listo", "✅"), ("entregado", "Entregado", "🛵"),
+    ("listo", "Listo", "✅"), ("encamino", "En camino", "🛵"), ("entregado", "Entregado", "🏁"),
 ]
-NEXT_STATUS = {"nuevo": "preparando", "preparando": "listo", "listo": "entregado"}
-NEXT_LABEL = {"preparando": "Preparar", "listo": "Marcar listo", "entregado": "Entregar"}
-VALID_STATUSES = {"nuevo", "preparando", "listo", "entregado", "cancelado", "esperando"}
+NEXT_STATUS = {"nuevo": "preparando", "preparando": "listo", "listo": "encamino", "encamino": "entregado"}
+NEXT_LABEL = {
+    "preparando": "Preparar", "listo": "Marcar listo",
+    "encamino": "Asignar repartidor", "entregado": "Entregar",
+}
+VALID_STATUSES = {"nuevo", "preparando", "listo", "encamino", "entregado", "cancelado", "esperando"}
+COURIERS = [("Carlos M.", "🛵"), ("Lucía P.", "🛵"), ("Diego R.", "🏍️"), ("Andrea S.", "🛵")]
 DELIVERED_VISIBLE = 6
 
 
@@ -514,7 +525,12 @@ def enrich_order(order):
     status = order.get("status") or "nuevo"
     names = [m.group(2) for m in (DISH_RE.match(p) for p in dishes.split(", ")) if m] if dishes else []
     icons = "".join(dict.fromkeys(dish_icon(name) for name in names))[:6] or "🍽️"
+    courier, eta = "", 0
+    if status == "encamino":
+        name, vehicle = COURIERS[int(order["id"]) % len(COURIERS)]
+        courier, eta = f"{vehicle} {name}", 8 + (int(order["id"]) * 7) % 15
     return {
+        "courier": courier, "eta": eta,
         "icons": icons,
         "id": order["id"], "who": who, "dishes": dishes, "platform": platform,
         "restaurant": restaurant, "total": float(order.get("total") or 0),
@@ -569,9 +585,11 @@ def plato_agotado(order_id):
         who, _, dishes = str(order.get("customer", "")).partition(" — ")
         first = DISH_RE.match(dishes.split(", ")[0]) if dishes else None
         dish = first.group(2) if first else "Un plato"
+        if first:
+            set_dish_available(dish, False)
         add_alert(
             "Plato agotado",
-            f"{dish} no está disponible ({who}). Se avisó al cliente para que cancele o acepte un cambio.",
+            f"{dish} no está disponible ({who}). Se avisó al cliente y el plato quedó agotado en el menú.",
         )
     return done()
 
@@ -612,6 +630,190 @@ def exportar_csv():
     )
 
 
+LATE_AFTER = timedelta(minutes=15)
+
+
+def dish_prices():
+    return {dish: price for restaurant in QUITO_DEMO for dish, price in restaurant["menu"]}
+
+
+def build_insights(report, orders):
+    """Sugerencias basadas en reglas sobre los datos del usuario (no es IA generativa)."""
+    if not report["orders"]:
+        return [{"icon": "💡", "title": "Aún no hay datos",
+                 "text": "Pulsa “Preparar demo” para cargar restaurantes, plataformas y un día de pedidos."}]
+    tips = []
+    if report["peak"]:
+        top = max(report["hours"], key=lambda hour: hour["count"])
+        tips.append({"icon": "⏰", "title": f"Tu hora pico es a las {top['label']}",
+                     "text": f"Entran {top['count']} pedidos en esa hora. Ten la cocina lista 30 minutos antes."})
+    if report["dishes"]:
+        dish = report["dishes"][0]
+        tips.append({"icon": "⭐", "title": f"{dish['label']} es tu plato estrella",
+                     "text": f"Llevas {dish['shown']} unidades. Asegura los insumos antes de abrir."})
+    if report["platforms"]:
+        platform = report["platforms"][0]
+        tips.append({"icon": "📈", "title": f"{platform['label']} vende más",
+                     "text": f"Suma {platform['shown']}. Mantén su disponibilidad al día para no perder pedidos."})
+    now = datetime.utcnow()
+    late = sum(
+        1 for order in orders
+        if (order.get("status") or "nuevo") in ("nuevo", "preparando")
+        and (created := _parse_created(order.get("created_at"))) and now - created > LATE_AFTER
+    )
+    if late:
+        title = "1 pedido lleva más de 15 minutos sin avanzar" if late == 1 \
+            else f"{late} pedidos llevan más de 15 minutos sin avanzar"
+        tips.append({"icon": "⚠️", "title": title,
+                     "text": "Prioriza los que están en rojo en el tablero para evitar cancelaciones."})
+    if report["avg"] < 15:
+        tips.append({"icon": "🍱", "title": "Ticket promedio bajo",
+                     "text": f"Está en ${report['avg']:.2f}. Prueba combos o bebidas para subirlo."})
+    return tips[:4]
+
+
+def menu_view(restaurant_names, off):
+    view = []
+    for restaurant in QUITO_DEMO:
+        if restaurant["name"] in restaurant_names:
+            view.append({
+                "name": restaurant["name"], "icon": restaurant_icon(restaurant["name"]),
+                "dishes": [
+                    {"name": dish, "icon": dish_icon(dish), "price": price, "off": dish in off}
+                    for dish, price in restaurant["menu"]
+                ],
+            })
+    return view
+
+
+def deliveries(orders):
+    result = []
+    for order in orders:
+        if order.get("status") != "encamino":
+            continue
+        card = enrich_order(order)
+        coords = QUITO_COORDS.get(card["restaurant"])
+        if not coords:
+            continue
+        oid = int(order["id"])
+        destination = [
+            round(coords[0] + ((oid * 37) % 100 - 50) / 5000, 5),
+            round(coords[1] + ((oid * 53) % 100 - 50) / 5000, 5),
+        ]
+        result.append({
+            "id": oid, "courier": card["courier"], "eta": card["eta"], "who": card["who"],
+            "from": [coords[0], coords[1]], "to": destination,
+        })
+    return result
+
+
+@app.get("/api/entregas")
+def api_entregas():
+    if not session.get("user_id"):
+        return {"deliveries": []}, 401
+    return {"deliveries": deliveries(get_orders())}
+
+
+@app.post("/menu/alternar")
+def alternar_plato():
+    if not session.get("user_id"):
+        return redirect(url_for("login_page"))
+    dish = request.form.get("dish", "")
+    if dish in DISH_EMOJI:
+        set_dish_available(dish, dish in get_unavailable())
+    return done("menu")
+
+
+@app.post("/demo/avanzar")
+def avanzar_demo():
+    if not session.get("user_id"):
+        return redirect(url_for("login_page"))
+    movable = [o for o in get_orders() if (o.get("status") or "nuevo") in NEXT_STATUS]
+    for order in random.sample(movable, k=min(2, len(movable))):
+        update_order(order["id"], NEXT_STATUS[order.get("status") or "nuevo"])
+    return done()
+
+
+def reset_user_data():
+    user_id = session["user_id"]
+    client = get_supabase_for_session()
+    if client:
+        for table, column, value in (
+            ("orders", "id", 0), ("alerts", "id", 0), ("restaurants", "id", 0),
+        ):
+            try:
+                client.table(table).delete().gte(column, value).execute()
+            except Exception:
+                pass
+        for table, column in (("connections", "platform"), ("unavailable_dishes", "dish")):
+            try:
+                client.table(table).delete().neq(column, "").execute()
+            except Exception:
+                pass
+    with get_db() as connection:
+        for table in ("orders", "alerts", "restaurants", "connections", "unavailable_dishes"):
+            connection.execute(f"DELETE FROM {table} WHERE user_id = ?", (user_id,))
+        connection.commit()
+
+
+@app.post("/demo/preparar")
+def preparar_demo():
+    if not session.get("user_id"):
+        return redirect(url_for("login_page"))
+    existing = {r["name"] for r in get_restaurants()}
+    for restaurant in QUITO_DEMO:
+        if restaurant["name"] not in existing:
+            add_restaurant(restaurant["name"], restaurant["address"])
+    connected = get_connections()
+    for platform in PLATFORMS:
+        if platform not in connected:
+            set_connection(platform, True)
+    if len(get_orders()) < 10:
+        add_orders_bulk(demo_history_rows())
+    add_alert("Demo lista", "Restaurantes de Quito cargados, plataformas conectadas y un día de pedidos de ejemplo.")
+    return redirect(url_for("inicio"))
+
+
+@app.post("/demo/reiniciar")
+def reiniciar_demo():
+    if not session.get("user_id"):
+        return redirect(url_for("login_page"))
+    reset_user_data()
+    return redirect(url_for("inicio"))
+
+
+@app.get("/pedidos/<int:order_id>/factura")
+def factura(order_id):
+    if not session.get("user_id"):
+        return redirect(url_for("login_page"))
+    order = find_order(order_id)
+    if not order:
+        return "Pedido no encontrado", 404
+    card = enrich_order(order)
+    prices = dish_prices()
+    lines = []
+    for part in card["dishes"].split(", ") if card["dishes"] else []:
+        match = DISH_RE.match(part)
+        if match and match.group(2) in prices:
+            qty, price = int(match.group(1)), prices[match.group(2)]
+            lines.append({"name": match.group(2), "qty": qty, "price": price, "amount": qty * price})
+    total = card["total"]
+    if lines and abs(sum(line["amount"] for line in lines) + DELIVERY_FEE - total) < 0.01:
+        lines.append({"name": "Envío a domicilio", "qty": 1, "price": DELIVERY_FEE, "amount": DELIVERY_FEE})
+    elif not lines or abs(sum(line["amount"] for line in lines) - total) >= 0.01:
+        lines = [{"name": "Consumo", "qty": 1, "price": total, "amount": total}]
+    base = round(total / 1.15, 2)
+    created = _parse_created(order.get("created_at"))
+    restaurant = next((r for r in QUITO_DEMO if r["name"] == card["restaurant"]), None)
+    return render_template(
+        "factura.html",
+        number=f"001-001-{order_id:09d}",
+        issued=(created + QUITO_UTC_OFFSET).strftime("%d/%m/%Y %H:%M") if created else "",
+        card=card, lines=lines, base=base, iva=round(total - base, 2), total=total,
+        address=restaurant["address"] if restaurant else "Quito, Ecuador",
+    )
+
+
 def public_url():
     return (os.getenv("PUBLIC_URL") or request.url_root).rstrip("/")
 
@@ -646,7 +848,7 @@ def manifest():
 @app.get("/")
 def inicio():
     if not session.get("user_id"):
-        return redirect(url_for("login_page"))
+        return render_template("landing.html", public_url=public_url())
     orders = get_orders()
     now_quito = datetime.utcnow() + QUITO_UTC_OFFSET
     today_orders = []
@@ -673,6 +875,8 @@ def inicio():
     return render_template(
         "index.html",
         columns=columns,
+        insights=build_insights(report, orders),
+        menu=menu_view({r["name"] for r in restaurants}, get_unavailable()),
         public_url=public_url(),
         waiting=waiting,
         cancelled=cancelled,
@@ -830,11 +1034,58 @@ QUITO_CUSTOMERS = [
 DELIVERY_FEE = 1.50
 
 
+def get_unavailable():
+    user_id = session["user_id"]
+    client = get_supabase_for_session()
+    if client:
+        try:
+            response = client.table("unavailable_dishes").select("dish").execute()
+            return {row["dish"] for row in response.data}
+        except Exception:
+            pass
+    with get_db() as connection:
+        rows = connection.execute(
+            "SELECT dish FROM unavailable_dishes WHERE user_id = ?", (user_id,)
+        ).fetchall()
+        return {row["dish"] for row in rows}
+
+
+def set_dish_available(dish, available):
+    if dish not in DISH_EMOJI:
+        return
+    user_id = session["user_id"]
+    client = get_supabase_for_session()
+    if client:
+        try:
+            if available:
+                client.table("unavailable_dishes").delete().eq("dish", dish).execute()
+            else:
+                client.table("unavailable_dishes").upsert(
+                    {"user_id": user_id, "dish": dish}, on_conflict="user_id,dish",
+                ).execute()
+            return
+        except Exception:
+            pass
+    with get_db() as connection:
+        if available:
+            connection.execute(
+                "DELETE FROM unavailable_dishes WHERE user_id = ? AND dish = ?", (user_id, dish)
+            )
+        else:
+            connection.execute(
+                "INSERT OR IGNORE INTO unavailable_dishes (user_id, dish) VALUES (?, ?)", (user_id, dish)
+            )
+        connection.commit()
+
+
 def pick_demo_order():
     mine = {r["name"] for r in get_restaurants()}
+    off = get_unavailable()
     pool = [r for r in QUITO_DEMO if r["name"] in mine] or QUITO_DEMO
+    pool = [r for r in pool if any(dish not in off for dish, _ in r["menu"])] or pool
     restaurant = random.choice(pool)
-    dishes = random.sample(restaurant["menu"], k=random.randint(1, min(3, len(restaurant["menu"]))))
+    menu = [item for item in restaurant["menu"] if item[0] not in off] or restaurant["menu"]
+    dishes = random.sample(menu, k=random.randint(1, min(3, len(menu))))
     lines = [(dish, price, random.randint(1, 2)) for dish, price in dishes]
     total = round(sum(price * qty for _, price, qty in lines) + DELIVERY_FEE, 2)
     return restaurant["name"], lines, total
@@ -968,7 +1219,7 @@ def demo_history_rows():
                 "customer": _label(random.randint(1000, 9999), f"{first} {last}",
                                    [(dish, qty) for dish, _, qty in lines]),
                 "total": total,
-                "status": random.choice(["nuevo", "preparando", "listo"]) if recent else "entregado",
+                "status": random.choice(["nuevo", "preparando", "listo", "encamino"]) if recent else "entregado",
                 "created_at": created.isoformat(),
             })
     return rows
