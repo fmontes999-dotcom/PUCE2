@@ -1,0 +1,14 @@
+{
+  "name": "Smart Order",
+  "short_name": "Smart Order",
+  "description": "Panel unificado de pedidos de delivery para restaurantes de Quito.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#171a28",
+  "theme_color": "#171a28",
+  "lang": "es",
+  "icons": [
+    { "src": "/static/logo.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

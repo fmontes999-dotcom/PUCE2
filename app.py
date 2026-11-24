@@ -1,3 +1,5 @@
+import csv
+import io
 import os
 import random
 import re
@@ -5,7 +7,7 @@ import sqlite3
 from datetime import datetime, timedelta, timezone
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from flask import Flask, flash, redirect, render_template, request, session, url_for
+from flask import Flask, Response, flash, redirect, render_template, request, session, url_for
 from supabase import Client, create_client
 
 
@@ -471,12 +473,145 @@ def build_report(orders):
         "sales": total,
         "avg": total / len(orders) if orders else 0,
         "platforms": _ranked(platforms, 3, money=True),
+        "restaurant_totals": restaurants,
         "restaurants": _ranked(restaurants, 5, money=True),
         "dishes": _ranked(dishes, 5, money=False),
         "hours": hours,
         "peak": peak,
         "half": peak // 2 if peak >= 4 else None,
     }
+
+
+STATUS_COLUMNS = [("nuevo", "Nuevo"), ("preparando", "Preparando"), ("listo", "Listo"), ("entregado", "Entregado")]
+NEXT_STATUS = {"nuevo": "preparando", "preparando": "listo", "listo": "entregado"}
+NEXT_LABEL = {"preparando": "Preparar", "listo": "Marcar listo", "entregado": "Entregar"}
+VALID_STATUSES = {"nuevo", "preparando", "listo", "entregado", "cancelado", "esperando"}
+DELIVERED_VISIBLE = 6
+
+
+def wants_fetch():
+    return request.headers.get("X-Requested-With") == "fetch"
+
+
+def done(anchor="pedidos"):
+    if wants_fetch():
+        return "", 204
+    return redirect(url_for("inicio") + f"#{anchor}")
+
+
+def enrich_order(order):
+    platform, _, restaurant = str(order.get("platform", "")).partition(" · ")
+    who, _, dishes = str(order.get("customer", "")).partition(" — ")
+    created = _parse_created(order.get("created_at"))
+    status = order.get("status") or "nuevo"
+    return {
+        "id": order["id"], "who": who, "dishes": dishes, "platform": platform,
+        "restaurant": restaurant, "total": float(order.get("total") or 0),
+        "status": status, "next": NEXT_STATUS.get(status),
+        "next_label": NEXT_LABEL.get(NEXT_STATUS.get(status), ""),
+        "created_iso": created.replace(microsecond=0).isoformat() + "Z" if created else "",
+    }
+
+
+def build_board(orders):
+    cards = [enrich_order(order) for order in orders]
+    columns = []
+    for key, label in STATUS_COLUMNS:
+        items = [card for card in cards if card["status"] == key]
+        extra = max(0, len(items) - DELIVERED_VISIBLE) if key == "entregado" else 0
+        columns.append({
+            "key": key, "label": label, "count": len(items),
+            "cards": items[:DELIVERED_VISIBLE] if key == "entregado" else items,
+            "extra": extra,
+        })
+    waiting = [card for card in cards if card["status"] == "esperando"]
+    cancelled = sum(1 for card in cards if card["status"] == "cancelado")
+    return columns, waiting, cancelled
+
+
+def map_points(restaurant_names, totals):
+    points = []
+    for restaurant in QUITO_DEMO:
+        name = restaurant["name"]
+        if name in restaurant_names and name in QUITO_COORDS:
+            sales, count = totals.get(name, (0.0, 0))
+            lat, lng = QUITO_COORDS[name]
+            points.append({
+                "name": name, "address": restaurant["address"], "lat": lat, "lng": lng,
+                "orders": count, "sales": round(sales, 2),
+            })
+    return points
+
+
+def find_order(order_id):
+    return next((o for o in get_orders() if int(o["id"]) == order_id), None)
+
+
+@app.post("/pedidos/<int:order_id>/agotado")
+def plato_agotado(order_id):
+    if not session.get("user_id"):
+        return redirect(url_for("login_page"))
+    order = find_order(order_id)
+    if order and order.get("status") == "nuevo":
+        update_order(order_id, "esperando")
+        who, _, dishes = str(order.get("customer", "")).partition(" — ")
+        first = DISH_RE.match(dishes.split(", ")[0]) if dishes else None
+        dish = first.group(2) if first else "Un plato"
+        add_alert(
+            "Plato agotado",
+            f"{dish} no está disponible ({who}). Se avisó al cliente para que cancele o acepte un cambio.",
+        )
+    return done()
+
+
+@app.post("/pedidos/<int:order_id>/respuesta/<accion>")
+def respuesta_cliente(order_id, accion):
+    if not session.get("user_id"):
+        return redirect(url_for("login_page"))
+    order = find_order(order_id)
+    if order and order.get("status") == "esperando" and accion in ("acepto", "cancelo"):
+        who = str(order.get("customer", "")).partition(" — ")[0]
+        if accion == "acepto":
+            update_order(order_id, "preparando")
+            add_alert("El cliente aceptó el cambio", f"{who}: el pedido sigue en preparación (evento order.fulfillment_issues.resolved).")
+        else:
+            update_order(order_id, "cancelado")
+            add_alert("El cliente canceló el pedido", f"{who}: el pedido fue cancelado por el cliente.")
+    return done()
+
+
+@app.get("/exportar.csv")
+def exportar_csv():
+    if not session.get("user_id"):
+        return redirect(url_for("login_page"))
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(["id", "fecha_quito", "plataforma", "restaurante", "cliente", "detalle", "total_usd", "estado"])
+    for order in get_orders():
+        card = enrich_order(order)
+        created = _parse_created(order.get("created_at"))
+        local = (created + QUITO_UTC_OFFSET).strftime("%Y-%m-%d %H:%M") if created else ""
+        writer.writerow([card["id"], local, card["platform"], card["restaurant"], card["who"],
+                         card["dishes"], f'{card["total"]:.2f}', card["status"]])
+    return Response(
+        "﻿" + buffer.getvalue(),
+        mimetype="text/csv",
+        headers={"Content-Disposition": "attachment; filename=pedidos-smart-order.csv"},
+    )
+
+
+@app.get("/sw.js")
+def service_worker():
+    response = app.send_static_file("sw.js")
+    response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
+@app.get("/manifest.webmanifest")
+def manifest():
+    response = app.send_static_file("manifest.webmanifest")
+    response.mimetype = "application/manifest+json"
+    return response
 
 
 @app.get("/")
@@ -504,11 +639,17 @@ def inicio():
     }
     restaurants = get_restaurants()
     alerts = get_alerts()
+    report = build_report(orders)
+    columns, waiting, cancelled = build_board(orders)
     return render_template(
         "index.html",
+        columns=columns,
+        waiting=waiting,
+        cancelled=cancelled,
+        map_points=map_points({r["name"] for r in restaurants}, report["restaurant_totals"]),
         platforms=PLATFORMS,
         connected=connected,
-        report=build_report(orders),
+        report=report,
         unread=sum(1 for alert in alerts if not alert.get("read")),
         orders=orders,
         metrics=metrics,
@@ -530,8 +671,10 @@ def crear_pedido():
 
 @app.post("/pedidos/<int:order_id>/estado")
 def actualizar_estado(order_id):
-    update_order(order_id, request.form["status"])
-    return redirect(url_for("inicio"))
+    status = request.form["status"]
+    if status in VALID_STATUSES:
+        update_order(order_id, status)
+    return done()
 
 
 @app.get("/health")
@@ -611,6 +754,15 @@ QUITO_DEMO = [
         ("Pizza margarita", 9.00), ("Pizza pepperoni", 11.00), ("Lasaña", 8.50),
         ("Pan de ajo", 3.50)]},
 ]
+# Ubicaciones aproximadas para el mapa (latitud, longitud).
+QUITO_COORDS = {
+    "Sabor Quiteño": (-0.2020, -78.4905),
+    "Hornado del Centro": (-0.2205, -78.5115),
+    "Cevichería La Carolina": (-0.1807, -78.4846),
+    "Parrilla Cumbayá": (-0.2005, -78.4260),
+    "Cocina de la Abuela": (-0.1745, -78.4790),
+    "Pizzería González Suárez": (-0.2062, -78.4872),
+}
 QUITO_CUSTOMERS = [
     ("Andrés", "Játiva"), ("María Fernanda", "Cevallos"), ("Santiago", "Proaño"),
     ("Daniela", "Chiriboga"), ("Esteban", "Villacís"), ("Paola", "Andrade"),
@@ -728,7 +880,7 @@ def pedido_entrante_demo(platform):
         return redirect(url_for("login_page"))
     if platform in PLATFORMS and platform in get_connections():
         ingest_order(platform, sample_payload(platform))
-    return redirect(url_for("inicio") + "#pedidos")
+    return done()
 
 
 # Pedidos por hora del día en Quito: picos en el almuerzo y la cena.

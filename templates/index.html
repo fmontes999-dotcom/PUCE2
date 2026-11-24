@@ -5,7 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Panel · Smart Order</title>
     <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='logo.svg') }}">
+    <link rel="manifest" href="{{ url_for('manifest') }}">
+    <meta name="theme-color" content="#171a28">
+    <script>document.documentElement.dataset.theme = localStorage.getItem("theme") || "light";</script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script defer src="{{ url_for('static', filename='main.js') }}"></script>
 </head>
 <body class="dashboard-body">
@@ -32,6 +37,10 @@
                     <span class="nav-icon">◫</span>
                     <span>Reportes</span>
                 </a>
+                <a href="#mapa">
+                    <span class="nav-icon">⌖</span>
+                    <span>Mapa</span>
+                </a>
             </nav>
             <form class="sidebar-user" action="{{ url_for('logout') }}" method="post">
                 <span class="avatar">{{ session.email[0:1]|upper if session.email else 'U' }}</span>
@@ -51,8 +60,8 @@
                     <strong>Panel</strong>
                 </div>
                 <div class="topbar-actions">
-                    <a class="icon-button bell" href="#notificaciones" title="Notificaciones">♧{% if unread %}<span class="badge">{{ unread }}</span>{% endif %}</a>
-                    <button type="button" class="icon-button" title="Configuración">⚙</button>
+                    <a class="icon-button bell" id="bell" href="#notificaciones" title="Notificaciones">♧{% if unread %}<span class="badge">{{ unread }}</span>{% endif %}</a>
+                    <button type="button" class="icon-button" id="theme-toggle" title="Cambiar tema claro/oscuro" aria-label="Cambiar tema">◐</button>
                 </div>
             </header>
 
@@ -78,7 +87,7 @@
                     </div>
                 </section>
 
-                <section class="metrics-grid">
+                <section class="metrics-grid" id="metrics">
                     <article class="metric-card accent">
                         <p>Pedidos hoy</p>
                         <strong>{{ metrics.today }}</strong>
@@ -183,13 +192,24 @@
                     {% endif %}
                 </section>
 
-                <section class="orders-section" id="pedidos">
+                <section class="orders-section" id="pedidos" data-connected="{{ connected|sort|join(',') }}">
                     <div class="section-head">
                         <div>
                             <p>Pedidos hoy</p>
-                            <h2>Actividad reciente</h2>
+                            <h2>Tablero de pedidos</h2>
                         </div>
                         <button class="button outline compact" type="button" id="toggle-order-form">+ Nuevo pedido</button>
+                    </div>
+
+                    <div class="toolbar">
+                        <input id="order-search" type="search" placeholder="Buscar cliente, plato o restaurante" aria-label="Buscar pedidos">
+                        <select id="order-platform" aria-label="Filtrar por plataforma">
+                            <option value="">Todas las plataformas</option>
+                            {% for info in platforms.values() %}<option value="{{ info.label }}">{{ info.label }}</option>{% endfor %}
+                        </select>
+                        <button class="button outline compact" id="live-toggle" type="button" aria-pressed="false">▶ Simulación en vivo</button>
+                        <a class="button outline compact" href="{{ url_for('exportar_csv') }}">⬇ CSV</a>
+                        <button class="button outline compact" id="print-btn" type="button">⎙ PDF</button>
                     </div>
 
                     <form class="order-form hidden" action="{{ url_for('crear_pedido') }}" method="post" id="order-form">
@@ -213,43 +233,52 @@
                         <button class="button orange" type="submit">Agregar pedido</button>
                     </form>
 
-                    <div class="orders-list">
-                        {% for order in orders %}
-                        {% set source = order.platform.split(' · ', 1) %}
-                        {% set who = order.customer.split(' — ', 1) %}
-                        <article class="order-row">
-                            <span class="order-status {{ order.status }}"></span>
-                            <div class="order-client">
-                                <strong>{{ who[0] }}</strong>
-                                {% if who|length > 1 %}<small class="dishes">{{ who[1] }}</small>{% endif %}
-                                <span class="order-source">
-                                    <span class="chip chip-{{ source[0]|lower|replace(' ', '') }}">{{ source[0] }}</span>
-                                    {% if source|length > 1 %}<small>{{ source[1] }}</small>{% endif %}
-                                </span>
-                            </div>
-                            <div class="order-total">
-                                <small>Total</small>
-                                <strong>${{ "%.2f"|format(order.total) }}</strong>
-                            </div>
-                            <form action="{{ url_for('actualizar_estado', order_id=order.id) }}" method="post">
-                                <select name="status" aria-label="Estado del pedido">
-                                    <option value="nuevo" {% if order.status == 'nuevo' %}selected{% endif %}>Nuevo</option>
-                                    <option value="preparando" {% if order.status == 'preparando' %}selected{% endif %}>Preparando</option>
-                                    <option value="listo" {% if order.status == 'listo' %}selected{% endif %}>Listo</option>
-                                    <option value="entregado" {% if order.status == 'entregado' %}selected{% endif %}>Entregado</option>
-                                </select>
-                                <button type="submit">Actualizar</button>
-                            </form>
-                        </article>
-                        {% else %}
-                        <div class="empty-state">
-                            <span>0</span>
-                            <div>
-                                <strong>No hay pedidos registrados</strong>
-                                <small>Agrega un pedido para comenzar.</small>
+﻿                    {% macro kcard(c, waiting=False) %}
+                    <article class="kcard" draggable="{{ 'false' if waiting else 'true' }}" data-id="{{ c.id }}" data-status="{{ c.status }}" data-created="{{ c.created_iso }}" data-platform="{{ c.platform }}" data-search="{{ (c.who ~ ' ' ~ c.dishes ~ ' ' ~ c.restaurant)|lower }}" data-url-estado="{{ url_for('actualizar_estado', order_id=c.id) }}">
+                        <div class="kcard-top">
+                            <span class="chip chip-{{ c.platform|lower|replace(' ', '') }}">{{ c.platform }}</span>
+                            <span class="timer" data-timer>—</span>
+                        </div>
+                        <strong>{{ c.who }}</strong>
+                        {% if c.dishes %}<small class="dishes">{{ c.dishes }}</small>{% endif %}
+                        {% if c.restaurant %}<small class="where">⌖ {{ c.restaurant }}</small>{% endif %}
+                        <div class="kcard-foot">
+                            <b>${{ "%.2f"|format(c.total) }}</b>
+                            <span class="kcard-actions">
+                                {% if waiting %}
+                                <button type="button" class="mini" data-act="{{ url_for('respuesta_cliente', order_id=c.id, accion='acepto') }}">Cliente aceptó</button>
+                                <button type="button" class="mini ghost" data-act="{{ url_for('respuesta_cliente', order_id=c.id, accion='cancelo') }}">Canceló</button>
+                                {% else %}
+                                {% if c.status == 'nuevo' %}<button type="button" class="mini ghost" data-act="{{ url_for('plato_agotado', order_id=c.id) }}" title="Avisar al cliente que un plato se agotó">Plato agotado</button>{% endif %}
+                                {% if c.next %}<button type="button" class="mini" data-act="{{ url_for('actualizar_estado', order_id=c.id) }}" data-status="{{ c.next }}">{{ c.next_label }} →</button>{% endif %}
+                                {% endif %}
+                            </span>
+                        </div>
+                    </article>
+                    {% endmacro %}
+
+                    <div id="board-wrap">
+                        {% if waiting %}
+                        <div class="waiting">
+                            <h3>Esperando respuesta del cliente <span>({{ waiting|length }})</span></h3>
+                            <p>Un plato se agotó. La plataforma avisa al cliente en su app para que cancele o acepte un cambio.</p>
+                            <div class="waiting-grid">
+                                {% for c in waiting %}{{ kcard(c, True) }}{% endfor %}
                             </div>
                         </div>
-                        {% endfor %}
+                        {% endif %}
+                        <div class="kanban">
+                            {% for col in columns %}
+                            <div class="kcol" data-status="{{ col.key }}">
+                                <header><strong>{{ col.label }}</strong><span class="count">{{ col.count }}</span></header>
+                                <div class="kcol-body">
+                                    {% for c in col.cards %}{{ kcard(c) }}{% else %}<p class="kempty">Sin pedidos</p>{% endfor %}
+                                    {% if col.extra %}<p class="kmore">+{{ col.extra }} entregados más (están en el CSV)</p>{% endif %}
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                        {% if cancelled %}<p class="cancelled-note">{{ cancelled }} pedido(s) cancelado(s) por el cliente</p>{% endif %}
                     </div>
                 </section>
 
@@ -342,6 +371,22 @@
                         <div class="alert-row"><small>No tienes notificaciones nuevas.</small></div>
                         {% endfor %}
                     </article>
+                </section>
+
+                <section class="map-section" id="mapa">
+                    <div class="section-head">
+                        <div>
+                            <p>Cobertura</p>
+                            <h2>Mapa de Quito</h2>
+                        </div>
+                        <span class="live-chip">Ubicaciones aproximadas</span>
+                    </div>
+                    <div id="map" class="map" data-points='{{ map_points|tojson }}'>
+                        <p class="map-fallback">Cargando mapa…</p>
+                    </div>
+                    {% if not map_points %}
+                    <p class="map-empty">Pulsa “Cargar restaurantes de Quito (demo)” para verlos aquí.</p>
+                    {% endif %}
                 </section>
 
                 <section class="roadmap" id="hoja-de-ruta">
