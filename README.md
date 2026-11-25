@@ -6,6 +6,8 @@ Panel unificado de pedidos de delivery para restaurantes de Quito. Reúne en un 
 
 **En línea:** https://puce2.onrender.com (el plan gratuito de Render se duerme; la primera visita tarda cerca de un minuto).
 
+**Manual de uso (PDF):** [`docs/Manual-SmartOrder-IA.pdf`](docs/Manual-SmartOrder-IA.pdf)
+
 ## Qué hace
 
 - **Tablero Kanban** de pedidos: Nuevo → Preparando → Listo → En camino → Entregado. Se mueven con un botón o arrastrando.

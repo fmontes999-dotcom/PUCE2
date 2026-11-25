@@ -256,7 +256,7 @@
                                     <p class="forecast-big">≈ {{ '%.0f'|format(forecast.total3) }}<span>pedidos esperados en las {{ 'primeras 3 horas de mañana' if forecast.tomorrow else 'próximas 3 horas de atención' }}</span></p>
                                     <ul>
                                         <li>⏰ Pico previsto a las <b>{{ forecast.peak.label }}{{ forecast.peak.day }}</b> (≈ {{ '%.0f'|format(forecast.peak.value) }} pedidos)</li>
-                                        {% if forecast.dish %}<li>{{ forecast.dish.icon }} Prepara unas <b>{{ forecast.dish.units }}</b> unidades de {{ forecast.dish.name }}</li>{% endif %}
+                                        {% if forecast.dish %}<li>{{ forecast.dish.icon }} Prepara {% if forecast.dish.units == 1 %}<b>1</b> unidad{% else %}unas <b>{{ forecast.dish.units }}</b> unidades{% endif %} de {{ forecast.dish.name }}</li>{% endif %}
                                         <li>📈 {{ forecast.pace }}</li>
                                     </ul>
                                     <small class="forecast-note">Cómo funciona: aprende el patrón de cada hora de los últimos {{ forecast.days }} días (pesa más los recientes) y lo ajusta con las últimas 3 horas.{% if forecast.mae is not none %} En una prueba con días pasados, el error medio fue de {{ forecast.mae }} pedidos por hora (método ingenuo: {{ forecast.naive_mae }}).{% endif %} Es gratis y no usa servicios externos.</small>

@@ -662,7 +662,11 @@ def build_insights(report, orders, forecast=None):
                  "text": "Pulsa “Preparar demo” para cargar restaurantes, plataformas y varios días de pedidos."}]
     tips = []
     if forecast and forecast.get("ready"):
-        extra = f" Prepara unas {forecast['dish']['units']} unidades de {forecast['dish']['name']}." if forecast["dish"] else ""
+        units = forecast["dish"]["units"] if forecast["dish"] else 0
+        extra = (
+            f" Prepara {'1 unidad' if units == 1 else f'unas {units} unidades'}"
+            f" de {forecast['dish']['name']}."
+        ) if forecast["dish"] else ""
         when = "en las primeras 3 horas de mañana" if forecast["tomorrow"] else "en las próximas 3 horas de atención"
         tips.append({"icon": "🔮", "title": f"Pronóstico: ≈{forecast['total3']:.0f} pedidos {when}",
                      "text": f"El pico será a las {forecast['peak']['label']}{forecast['peak']['day']} "
