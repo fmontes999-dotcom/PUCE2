@@ -5,7 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Smart Order · Todos tus pedidos de delivery en una sola pantalla</title>
     <meta name="description" content="Panel unificado de pedidos de Rappi, PedidosYa y Uber Eats para restaurantes de Quito.">
-    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='logo.svg') }}">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo-icon.png') }}">
+    <link rel="apple-touch-icon" href="{{ url_for('static', filename='icon-192.png') }}">
     <link rel="manifest" href="{{ url_for('manifest') }}">
     <meta name="theme-color" content="#171a28">
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
@@ -13,8 +14,8 @@
 <body class="landing">
     <header class="l-nav">
         <a class="l-brand" href="{{ url_for('inicio') }}">
-            <img src="{{ url_for('static', filename='logo.svg') }}" alt="" width="36" height="36">
-            <span>Smart Order</span>
+            <img src="{{ url_for('static', filename='logo-icon.png') }}" alt="" width="40" height="40">
+            <span>SmartOrder IA</span>
         </a>
         <nav>
             <a href="#beneficios">Beneficios</a>
@@ -32,6 +33,7 @@
             <span style="--d: .3s; --x: 80%; --y: 68%">🥟</span>
             <span style="--d: 1s; --x: 50%; --y: 6%">🛵</span>
         </div>
+        <img class="l-logo" src="{{ url_for('static', filename='logo-full.png') }}" alt="SmartOrder IA" width="360" height="209">
         <p class="l-eyebrow">Para restaurantes de Quito</p>
         <h1>Todos tus pedidos de delivery,<br><em>en una sola pantalla.</em></h1>
         <p class="l-lead">Recibe, ordena y entrega los pedidos de Rappi, PedidosYa y Uber Eats desde un tablero simple, con reportes en vivo y avisos al instante.</p>

@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Factura {{ number }} · Smart Order</title>
-    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='logo.svg') }}">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo-icon.png') }}">
     <style>
         body { margin: 0; padding: 24px; background: #eceae3; font-family: Arial, sans-serif; color: #171b2a; }
         .sheet { max-width: 720px; margin: 0 auto; padding: 36px; border-radius: 12px; background: #fff; box-shadow: 0 10px 30px rgba(0,0,0,.08); }
@@ -34,7 +34,7 @@
         <p class="demo"><strong>Documento de demostración.</strong> Esta factura es un ejemplo generado por el prototipo Smart Order: el RUC es ficticio y no tiene validez tributaria ni está autorizada por el SRI.</p>
         <header>
             <div>
-                <div class="brand"><img src="{{ url_for('static', filename='logo.svg') }}" alt=""> Smart Order</div>
+                <div class="brand"><img src="{{ url_for('static', filename='logo-icon.png') }}" alt=""> SmartOrder IA</div>
                 <h1>{{ card.restaurant or 'Restaurante' }}</h1>
                 <small>RUC: 1790000000001 (ficticio)<br>{{ address }}</small>
             </div>

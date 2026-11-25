@@ -84,7 +84,7 @@ Tablas: `orders`, `restaurants`, `alerts`, `connections`, `unavailable_dishes`, 
 ```
 app.py                  Rutas, lógica de pedidos, reportes, demo y respaldo SQLite
 templates/              index.html (panel), landing.html, auth.html, factura.html
-static/                 styles.css, main.js, logo.svg, sw.js, manifest.webmanifest
+static/                 styles.css, main.js, logos (logo-full.png, logo-icon.png, icon-*.png), sw.js, manifest.webmanifest
 supabase_schema.sql     Tablas y políticas de seguridad
 render.yaml, Procfile   Despliegue
 ```

@@ -4,14 +4,13 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{ "Crear cuenta" if mode == "register" else "Iniciar sesión" }} · Smart Order IA</title>
-    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='logo.svg') }}">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo-icon.png') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
 </head>
 <body class="auth-body">
     <main class="auth-card">
         <a class="brand auth-brand" href="{{ url_for('inicio') }}">
-            <img src="{{ url_for('static', filename='logo.svg') }}" alt="" width="40" height="40">
-            <span>Smart Order</span>
+            <img class="auth-logo" src="{{ url_for('static', filename='logo-full.png') }}" alt="SmartOrder IA" width="320" height="186">
         </a>
         <p class="eyebrow">{{ "Nueva cuenta" if mode == "register" else "Acceso seguro" }}</p>
         <h1>{{ "Crea tu cuenta" if mode == "register" else "Inicia sesión" }}</h1>
